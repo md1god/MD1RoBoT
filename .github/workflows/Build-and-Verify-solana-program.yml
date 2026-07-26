@@ -30,8 +30,10 @@ jobs:
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
             pkg-config build-essential libudev-dev
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install Rust toolchain (Compatible v1.79.0)
+        uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: 1.79.0
 
       - name: Cache cargo registry
         uses: actions/cache@v4
@@ -72,25 +74,20 @@ jobs:
           anchor --version
           rustc --version
 
-      - name: Remove incompatible Cargo.lock (Fix version 4 issue)
+      - name: Clean incompatible Cargo.lock and regenerate v3
         run: |
           rm -f Cargo.lock
-          find . -name "Cargo.lock" -delete
+          cargo generate-lockfile
 
-      # anchor build --verifiable builds inside Anchor's own Docker image
-      # with pinned, known-good dependency versions, which sidesteps the
-      # edition2024 / lockfile-version mismatches.
-      - name: Build program (verifiable, via Docker)
-        run: anchor build --verifiable
+      # استخدام anchor build العادي لتجنب مشاكل حاوية Docker القديمة وإصدارات Rust الحديثة
+      - name: Build program (Standard Anchor Build)
+        run: anchor build
 
       - name: Package build output as zip
         run: |
           mkdir -p release-package
           cp -r target/deploy release-package/ 2>/dev/null || true
           cp -r target/idl release-package/ 2>/dev/null || true
-          if [ -d target/verifiable ]; then
-            cp -r target/verifiable release-package/
-          fi
           cd release-package
           zip -r ../anchor-build-${{ github.sha }}.zip .
           cd ..
@@ -118,8 +115,10 @@ jobs:
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
             pkg-config build-essential libudev-dev
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install Rust toolchain (Compatible v1.79.0)
+        uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: 1.79.0
 
       - name: Cache cargo registry
         uses: actions/cache@v4
