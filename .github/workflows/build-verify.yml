@@ -139,8 +139,10 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-${{ env.ANCHOR_VERSION }}-
 
-      - name: Install solana-verify CLI
-        run: cargo install solana-verify --locked
+      - name: Install solana-verify CLI (Isolated)
+        run: |
+          cd /tmp
+          cargo install solana-verify --locked
 
       - name: Install Solana CLI ${{ env.SOLANA_VERSION }}
         run: |
