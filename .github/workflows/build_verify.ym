@@ -1,1 +1,45 @@
+name: Build and Verify Solana Program
 
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:   # ⬅️ هذا يضيف زر تشغيل يدوي
+
+
+jobs:
+  build-and-verify:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1️⃣ إعداد بيئة العمل
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      # 2️⃣ تثبيت Rust بنفس النسخة المحددة
+      - name: Install Rust
+        run: |
+          rustup default stable
+          rustup update
+          rustc --version
+          cargo --version
+
+      # 3️⃣ تثبيت Anchor
+      - name: Install Anchor
+        run: |
+          cargo install --git https://github.com/coral-xyz/anchor anchor-cli --locked
+          anchor --version
+
+      # 4️⃣ تثبيت أداة solana-verify
+      - name: Install solana-verify
+        run: cargo install solana-verify --locked
+
+      # 5️⃣ بناء البرنامج
+      - name: Build Solana Program
+        run: anchor build
+
+      # 6️⃣ التحقق من البرنامج على الشبكة الرئيسية
+      - name: Verify Program on Mainnet
+        run: |
+          solana-verify verify 3fN2LAt47q3oSgNq4dJZt4DuAh5yJw6mb6B3dRYJGHa8 ./target/deploy/md1usd_solana.so
