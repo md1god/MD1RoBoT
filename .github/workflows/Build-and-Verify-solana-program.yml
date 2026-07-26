@@ -53,12 +53,6 @@ jobs:
           fi
           echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
 
-      # The official fix for the E0282 "time" crate build failure:
-      # anchor-cli 0.30.1 pins time 0.3.29, which fails to compile on
-      # rustc >=1.80 (the default on GitHub runners). We build anchor-cli
-      # from the tagged source ourselves and force-update the `time`
-      # dependency to a fixed version before compiling, per the upstream
-      # guidance in coral-xyz/anchor#3239.
       - name: Install Anchor CLI ${{ env.ANCHOR_VERSION }} (with time crate fix)
         run: |
           if command -v anchor >/dev/null 2>&1 && anchor --version | grep -q "${{ env.ANCHOR_VERSION }}"; then
@@ -78,10 +72,14 @@ jobs:
           anchor --version
           rustc --version
 
+      - name: Remove incompatible Cargo.lock (Fix version 4 issue)
+        run: |
+          rm -f Cargo.lock
+          find . -name "Cargo.lock" -delete
+
       # anchor build --verifiable builds inside Anchor's own Docker image
       # with pinned, known-good dependency versions, which sidesteps the
-      # edition2024 / lockfile-version mismatches that come from building
-      # directly on the runner with cargo-build-sbf's bundled older Rust.
+      # edition2024 / lockfile-version mismatches.
       - name: Build program (verifiable, via Docker)
         run: anchor build --verifiable
 
@@ -148,4 +146,13 @@ jobs:
 
       - name: Install Anchor CLI ${{ env.ANCHOR_VERSION }} (with time crate fix)
         run: |
-          if command -v anchor >/dev/null 2>&1 && anchor --version |
+          if command -v anchor >/dev/null 2>&1 && anchor --version | grep -q "${{ env.ANCHOR_VERSION }}"; then
+            echo "anchor-cli already installed"
+            exit 0
+          fi
+          rm -rf /tmp/anchor-src
+          git clone --depth 1 --branch v${{ env.ANCHOR_VERSION }} https://github.com/coral-xyz/anchor /tmp/anchor-src
+          cd /tmp/anchor-src
+          cargo update -p time --precise 0.3.36
+          cargo install --path cli --locked --force
+          cd -
