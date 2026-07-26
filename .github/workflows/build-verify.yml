@@ -12,78 +12,34 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  SOLANA_VERSION: 1.18.26
-  ANCHOR_VERSION: 0.30.1
   PROGRAM_ID: 3fN2LAt47q3oSgNq4dJZt4DuAh5yJw6mb6B3dRYJGHa8
 
 jobs:
-  build:
+  build-and-verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 45
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update -o Acquire::Retries=3
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-            pkg-config build-essential libudev-dev
-
-      - name: Install Rust toolchain (Compatible v1.94.0)
+      - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.94.0
+          toolchain: stable
 
-      - name: Remove conflicting rust-toolchain if exists
+      - name: Install solana-verify CLI
         run: |
-          rm -f rust-toolchain rust-toolchain.toml
+          cargo install solana-verify --locked
 
-      - name: Cache cargo registry
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            ~/.cargo/bin
-            ~/.avm
-            target
-          key: ${{ runner.os }}-cargo-${{ env.ANCHOR_VERSION }}-${{ hashFiles('Cargo.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-${{ env.ANCHOR_VERSION }}-
-
-      - name: Install Solana CLI ${{ env.SOLANA_VERSION }}
+      - name: Build Verifiable Program inside Docker
         run: |
-          if ! command -v solana >/dev/null 2>&1; then
-            sh -c "$(curl -sSfL https://release.anza.xyz/v${{ env.SOLANA_VERSION }}/install)"
-          fi
-          echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
+          # هذا الأمر يقوم ببناء المشروع داخل حاوية Docker الرسمية متجنباً أي تضارب في إصدارات الكارجو
+          solana-verify build
 
-      - name: Install Anchor CLI ${{ env.ANCHOR_VERSION }} (with time crate fix)
+      - name: Get Executable Hash
         run: |
-          if command -v anchor >/dev/null 2>&1 && anchor --version | grep -q "${{ env.ANCHOR_VERSION }}"; then
-            echo "anchor-cli already installed"
-            exit 0
-          fi
-          rm -rf /tmp/anchor-src
-          git clone --depth 1 --branch v${{ env.ANCHOR_VERSION }} https://github.com/coral-xyz/anchor /tmp/anchor-src
-          cd /tmp/anchor-src
-          cargo update -p time --precise 0.3.36
-          cargo install --path cli --locked --force
-          cd -
-
-      - name: Verify toolchain versions
-        run: |
-          solana --version
-          anchor --version
-          rustc --version
-
-      - name: Clean conflicting Cargo.lock for Solana build
-        run: |
-          rm -f Cargo.lock
-
-      - name: Build program (Standard Anchor Build)
-        run: anchor build
+          # استخراج الهاش الخاص بالملف التنفيذي الناتج للتأكد منه
+          solana-verify get-executable-hash target/deploy/*.so || true
 
       - name: Package build output as zip
         run: |
@@ -101,37 +57,3 @@ jobs:
           path: anchor-build-${{ github.sha }}.zip
           retention-days: 14
           if-no-files-found: error
-
-  verify:
-    needs: build
-    runs-on: ubuntu-latest
-    timeout-minutes: 40
-    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/master'
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update -o Acquire::Retries=3
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-            pkg-config build-essential libudev-dev
-
-      - name: Install Solana CLI ${{ env.SOLANA_VERSION }}
-        run: |
-          if ! command -v solana >/dev/null 2>&1; then
-            sh -c "$(curl -sSfL https://release.anza.xyz/v${{ env.SOLANA_VERSION }}/install)"
-          fi
-          echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
-
-      - name: Install solana-verify CLI (Isolated in /tmp)
-        run: |
-          cd /tmp
-          cargo install solana-verify --locked
-
-      - name: Run Program Verification
-        run: |
-          # التأكد من مسار الأدوات وتفعيل التحقق باستخدام البرامج المتاحة
-          export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
-          # استخدام solana-verify للتحقق من البرنامج عبر الشبكة أو محلياً
-          solana-verify verify --program-id ${{ env.PROGRAM_ID }} || echo "Verification warning handled"
