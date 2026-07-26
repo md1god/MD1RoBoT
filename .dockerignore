@@ -1,0 +1,13 @@
+.git
+.gitignore
+.github
+.anchor
+target
+.DS_Store
+node_modules
+test-ledger
+.yarn
+.surfpool
+**/*.rs.bk
+.prettierignore
+.gitattributes
