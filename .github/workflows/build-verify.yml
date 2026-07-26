@@ -22,10 +22,15 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Rust toolchain
+      - name: Install Rust toolchain (Compatible)
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
+          toolchain: 1.75.0
+
+      - name: Regenerate compatible Cargo.lock
+        run: |
+          rm -f Cargo.lock
+          cargo generate-lockfile
 
       - name: Install solana-verify CLI
         run: |
@@ -33,15 +38,14 @@ jobs:
 
       - name: Build Verifiable Program inside Docker
         run: |
-          # هذا الأمر يقوم ببناء المشروع داخل حاوية Docker الرسمية متجنباً أي تضارب في إصدارات الكارجو
           solana-verify build
 
-      - name: Get Executable Hash
+      - name: Check IDL and Deploy outputs
         run: |
-          # استخراج الهاش الخاص بالملف التنفيذي الناتج للتأكد منه
-          solana-verify get-executable-hash target/deploy/*.so || true
+          ls -la target/idl || echo "IDL folder not found"
+          ls -la target/deploy || echo "Deploy folder not found"
 
-      - name: Package build output as zip
+      - name: Package build output as zip (includes deploy and IDL)
         run: |
           mkdir -p release-package
           cp -r target/deploy release-package/ 2>/dev/null || true
