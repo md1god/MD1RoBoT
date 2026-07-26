@@ -27,12 +27,7 @@ jobs:
         with:
           toolchain: 1.75.0
 
-      - name: Generate project Cargo.lock compatible with Docker
-        run: |
-          rm -f Cargo.lock
-          cargo generate-lockfile
-
-      - name: Step 2 - Switch to Stable Rust to install solana-verify CLI
+            - name: Step 2 - Switch to Stable Rust to install solana-verify CLI
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
