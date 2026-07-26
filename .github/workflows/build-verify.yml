@@ -35,6 +35,10 @@ jobs:
         with:
           toolchain: 1.79.0
 
+      - name: Remove conflicting rust-toolchain if exists
+        run: |
+          rm -f rust-toolchain rust-toolchain.toml
+
       - name: Cache cargo registry
         uses: actions/cache@v4
         with:
@@ -74,12 +78,14 @@ jobs:
           anchor --version
           rustc --version
 
-      - name: Clean incompatible Cargo.lock and regenerate v3
+      - name: Generate compatible Cargo.lock and downgrade to version 3
         run: |
           rm -f Cargo.lock
           cargo generate-lockfile
+          if [ -f Cargo.lock ]; then
+            sed -i 's/^version = 4/version = 3/g' Cargo.lock || true
+          fi
 
-      # استخدام anchor build العادي لتجنب مشاكل حاوية Docker القديمة وإصدارات Rust الحديثة
       - name: Build program (Standard Anchor Build)
         run: anchor build
 
@@ -119,6 +125,10 @@ jobs:
         uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: 1.79.0
+
+      - name: Remove conflicting rust-toolchain if exists
+        run: |
+          rm -f rust-toolchain rust-toolchain.toml
 
       - name: Cache cargo registry
         uses: actions/cache@v4
