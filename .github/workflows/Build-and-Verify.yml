@@ -53,6 +53,12 @@ jobs:
           fi
           echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
 
+      # The official fix for the E0282 "time" crate build failure:
+      # anchor-cli 0.30.1 pins time 0.3.29, which fails to compile on
+      # rustc >=1.80 (the default on GitHub runners). We build anchor-cli
+      # from the tagged source ourselves and force-update the `time`
+      # dependency to a fixed version before compiling, per the upstream
+      # guidance in coral-xyz/anchor#3239.
       - name: Install Anchor CLI ${{ env.ANCHOR_VERSION }} (with time crate fix)
         run: |
           if command -v anchor >/dev/null 2>&1 && anchor --version | grep -q "${{ env.ANCHOR_VERSION }}"; then
@@ -71,6 +77,15 @@ jobs:
           solana --version
           anchor --version
           rustc --version
+
+      - name: Downgrade Cargo.lock to a version compatible with cargo-build-sbf
+        run: |
+          if [ -f Cargo.lock ]; then
+            LOCK_VERSION=$(grep -m1 '^version = ' Cargo.lock | grep -o '[0-9]*')
+            if [ "$LOCK_VERSION" = "4" ]; then
+              sed -i 's/^version = 4$/version = 3/' Cargo.lock
+            fi
+          fi
 
       - name: Build program (release)
         run: anchor build
@@ -148,6 +163,15 @@ jobs:
           cargo update -p time --precise 0.3.36
           cargo install --path cli --locked --force
           cd -
+
+      - name: Downgrade Cargo.lock to a version compatible with cargo-build-sbf
+        run: |
+          if [ -f Cargo.lock ]; then
+            LOCK_VERSION=$(grep -m1 '^version = ' Cargo.lock | grep -o '[0-9]*')
+            if [ "$LOCK_VERSION" = "4" ]; then
+              sed -i 's/^version = 4$/version = 3/' Cargo.lock
+            fi
+          fi
 
       - name: Build program (release)
         run: anchor build
