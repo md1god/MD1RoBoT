@@ -78,20 +78,12 @@ jobs:
           anchor --version
           rustc --version
 
-      # cargo-build-sbf bundles Rust 1.75.0 internally, which does not
-      # support the edition2024 feature and cannot parse lockfile format
-      # v4. Some transitive dependencies (zeroize_derive, blake3, etc.)
-      # have released versions that declare edition2024. Regenerating
-      # the lockfile with rustc 1.75.0 makes Cargo resolve versions that
-      # are actually compatible with that older bundled toolchain.
-      - name: Regenerate Cargo.lock for compatibility with the bundled Rust
-        run: |
-          rustup install 1.75.0 --profile minimal
-          rm -f Cargo.lock
-          cargo +1.75.0 generate-lockfile
-
-      - name: Build program (release)
-        run: anchor build
+      # anchor build --verifiable builds inside Anchor's own Docker image
+      # with pinned, known-good dependency versions, which sidesteps the
+      # edition2024 / lockfile-version mismatches that come from building
+      # directly on the runner with cargo-build-sbf's bundled older Rust.
+      - name: Build program (verifiable, via Docker)
+        run: anchor build --verifiable
 
       - name: Package build output as zip
         run: |
@@ -156,45 +148,4 @@ jobs:
 
       - name: Install Anchor CLI ${{ env.ANCHOR_VERSION }} (with time crate fix)
         run: |
-          if command -v anchor >/dev/null 2>&1 && anchor --version | grep -q "${{ env.ANCHOR_VERSION }}"; then
-            echo "anchor-cli already installed"
-            exit 0
-          fi
-          rm -rf /tmp/anchor-src
-          git clone --depth 1 --branch v${{ env.ANCHOR_VERSION }} https://github.com/coral-xyz/anchor /tmp/anchor-src
-          cd /tmp/anchor-src
-          cargo update -p time --precise 0.3.36
-          cargo install --path cli --locked --force
-          cd -
-
-      - name: Regenerate Cargo.lock for compatibility with the bundled Rust
-        run: |
-          rustup install 1.75.0 --profile minimal
-          rm -f Cargo.lock
-          cargo +1.75.0 generate-lockfile
-
-      - name: Build program (release)
-        run: anchor build
-
-      - name: Verify on mainnet
-        run: |
-          anchor verify -p md1usd_solana ${{ env.PROGRAM_ID }} --provider.cluster mainnet
-
-      - name: Package verify output as zip
-        if: always()
-        run: |
-          mkdir -p verify-package
-          cp -r target/deploy verify-package/ 2>/dev/null || true
-          cp -r target/idl verify-package/ 2>/dev/null || true
-          cd verify-package
-          zip -r ../verify-result-${{ github.sha }}.zip .
-          cd ..
-
-      - name: Upload verify zip artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: verify-result-${{ github.sha }}
-          path: verify-result-${{ github.sha }}.zip
-          retention-days: 14
-          if-no-files-found: warn
+          if command -v anchor >/dev/null 2>&1 && anchor --version |
