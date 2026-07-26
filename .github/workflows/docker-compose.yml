@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  anchor:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: anchor-solana:latest
+    container_name: anchor-dev
+    volumes:
+      - .:/app
+      - /app/target  # Prevent mount from overwriting compiled artifacts
+    environment:
+      RUST_LOG: debug
+      RUST_BACKTRACE: 1
+    working_dir: /app
+    command: build
+    # Uncomment for interactive testing
+    # stdin_open: true
+    # tty: true
