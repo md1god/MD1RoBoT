@@ -21,10 +21,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Fix declared rust-version to match the verification toolchain (1.75.0)
+        run: |
+          sed -i 's/rust-version = "1.89.0"/rust-version = "1.75.0"/' Cargo.toml
+          echo "---- Root Cargo.toml after fix ----"
+          cat Cargo.toml
+
       - name: Switch to Stable Rust to install solana-verify CLI
         uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable
 
       - name: Install solana-verify CLI (using stable cargo)
         run: |
