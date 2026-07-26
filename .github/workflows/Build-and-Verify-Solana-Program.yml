@@ -73,7 +73,7 @@ jobs:
           rustc --version
 
       - name: Build program (release)
-        run: anchor build -- --release
+       run: anchor build
 
       - name: Package build output as zip
         run: |
