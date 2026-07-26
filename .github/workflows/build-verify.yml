@@ -48,7 +48,7 @@ jobs:
             ~/.cargo/bin
             ~/.avm
             target
-          key: ${{ runner.os }}-cargo-${{ env.ANCHOR_VERSION }}-${{ hashFiles('Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-${{ env.ANCHOR_VERSION }}-${{ hashFiles('Cargo.toml') }}
           restore-keys: |
             ${{ runner.os }}-cargo-${{ env.ANCHOR_VERSION }}-
 
@@ -78,10 +78,9 @@ jobs:
           anchor --version
           rustc --version
 
-      - name: Generate fresh Cargo.lock for Rust 1.94.0
+      - name: Clean conflicting Cargo.lock for Solana build
         run: |
           rm -f Cargo.lock
-          cargo generate-lockfile
 
       - name: Build program (Standard Anchor Build)
         run: anchor build
@@ -136,7 +135,7 @@ jobs:
             ~/.cargo/bin
             ~/.avm
             target
-          key: ${{ runner.os }}-cargo-${{ env.ANCHOR_VERSION }}-${{ hashFiles('Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-${{ env.ANCHOR_VERSION }}-${{ hashFiles('Cargo.toml') }}
           restore-keys: |
             ${{ runner.os }}-cargo-${{ env.ANCHOR_VERSION }}-
 
@@ -151,6 +150,7 @@ jobs:
           echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
 
       - name: Install Anchor CLI ${{ env.ANCHOR_VERSION }} (with time crate fix)
+        key: ${{ runner.os }}-anchor-${{ env.ANCHOR_VERSION }}
         run: |
           if command -v anchor >/dev/null 2>&1 && anchor --version | grep -q "${{ env.ANCHOR_VERSION }}"; then
             echo "anchor-cli already installed"
