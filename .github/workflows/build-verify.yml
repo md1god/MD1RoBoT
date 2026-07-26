@@ -22,12 +22,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Step 1 - Install Rust 1.75.0 to generate compatible project lockfile
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: 1.75.0
-
-            - name: Step 2 - Switch to Stable Rust to install solana-verify CLI
+      - name: Switch to Stable Rust to install solana-verify CLI
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
@@ -37,9 +32,8 @@ jobs:
         run: |
           cargo install solana-verify --locked
 
-      - name: Step 3 - Build Verifiable Program inside Docker
+      - name: Build Verifiable Program inside Docker
         run: |
-          # سيعمل الآن لأن مشروعك يمتلك ملف قفل متوافق ودون مشاكل
           solana-verify build
 
       - name: Check IDL and Deploy outputs
