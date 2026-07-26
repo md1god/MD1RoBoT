@@ -78,14 +78,17 @@ jobs:
           anchor --version
           rustc --version
 
-      - name: Downgrade Cargo.lock to a version compatible with cargo-build-sbf
+      # cargo-build-sbf bundles Rust 1.75.0 internally, which does not
+      # support the edition2024 feature and cannot parse lockfile format
+      # v4. Some transitive dependencies (zeroize_derive, blake3, etc.)
+      # have released versions that declare edition2024. Regenerating
+      # the lockfile with rustc 1.75.0 makes Cargo resolve versions that
+      # are actually compatible with that older bundled toolchain.
+      - name: Regenerate Cargo.lock for compatibility with the bundled Rust
         run: |
-          if [ -f Cargo.lock ]; then
-            LOCK_VERSION=$(grep -m1 '^version = ' Cargo.lock | grep -o '[0-9]*')
-            if [ "$LOCK_VERSION" = "4" ]; then
-              sed -i 's/^version = 4$/version = 3/' Cargo.lock
-            fi
-          fi
+          rustup install 1.75.0 --profile minimal
+          rm -f Cargo.lock
+          cargo +1.75.0 generate-lockfile
 
       - name: Build program (release)
         run: anchor build
@@ -164,14 +167,11 @@ jobs:
           cargo install --path cli --locked --force
           cd -
 
-      - name: Downgrade Cargo.lock to a version compatible with cargo-build-sbf
+      - name: Regenerate Cargo.lock for compatibility with the bundled Rust
         run: |
-          if [ -f Cargo.lock ]; then
-            LOCK_VERSION=$(grep -m1 '^version = ' Cargo.lock | grep -o '[0-9]*')
-            if [ "$LOCK_VERSION" = "4" ]; then
-              sed -i 's/^version = 4$/version = 3/' Cargo.lock
-            fi
-          fi
+          rustup install 1.75.0 --profile minimal
+          rm -f Cargo.lock
+          cargo +1.75.0 generate-lockfile
 
       - name: Build program (release)
         run: anchor build
