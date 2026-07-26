@@ -30,10 +30,10 @@ jobs:
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
             pkg-config build-essential libudev-dev
 
-      - name: Install Rust toolchain (Compatible v1.79.0)
-        uses: dtolnay/rust-toolchain@v1
+      - name: Install Rust toolchain (Compatible v1.94.0)
+        uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.79.0
+          toolchain: 1.94.0
 
       - name: Remove conflicting rust-toolchain if exists
         run: |
@@ -78,13 +78,10 @@ jobs:
           anchor --version
           rustc --version
 
-      - name: Generate compatible Cargo.lock and downgrade to version 3
+      - name: Generate fresh Cargo.lock for Rust 1.94.0
         run: |
           rm -f Cargo.lock
           cargo generate-lockfile
-          if [ -f Cargo.lock ]; then
-            sed -i 's/^version = 4/version = 3/g' Cargo.lock || true
-          fi
 
       - name: Build program (Standard Anchor Build)
         run: anchor build
@@ -121,10 +118,10 @@ jobs:
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
             pkg-config build-essential libudev-dev
 
-      - name: Install Rust toolchain (Compatible v1.79.0)
-        uses: dtolnay/rust-toolchain@v1
+      - name: Install Rust toolchain (Compatible v1.94.0)
+        uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.79.0
+          toolchain: 1.94.0
 
       - name: Remove conflicting rust-toolchain if exists
         run: |
