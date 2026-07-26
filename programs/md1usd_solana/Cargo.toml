@@ -25,4 +25,4 @@ anchor-spl = { version = "0.30.1", features = ["metadata"] }
 solana-program = "1.18.26"
 block-buffer = "=0.10.4"
 getrandom = "=0.2.15"
-hybrid-array = "=0.3.6"
+sha2 = "=0.9.9"
