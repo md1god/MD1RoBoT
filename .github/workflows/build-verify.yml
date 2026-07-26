@@ -154,8 +154,7 @@ jobs:
 
       - name: Verify on mainnet
         run: |
-          anchor verify ${{ env.PROGRAM_ID }} --provider.cluster mainnet
-
+          anchor verify -p md1usd_solana 3fN2LAt47q3oSgNq4dJZt4DuAh5yJw6mb6B3dRYJGHa8 --provider.cluster mainnet
       - name: Package verify output as zip
         if: always()
         run: |
