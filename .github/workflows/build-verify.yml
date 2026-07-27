@@ -67,9 +67,24 @@ jobs:
           path: anchor-build-${{ github.sha }}.zip
           retention-days: 14
           if-no-files-found: error
-      - name: Submit remote verification (OtterSec)
+       - name: Setup verify authority keypair
         run: |
-          solana-verify verify-from-repo --remote \
+          echo '${{ secrets.VERIFY_AUTHORITY_KEYPAIR }}' > verify-authority.json
+          solana-keygen pubkey verify-authority.json
+
+      - name: Submit verification PDA on-chain
+        run: |
+          solana config set --keypair verify-authority.json --url mainnet-beta
+          yes | solana-verify verify-from-repo \
             --program-id ${{ env.PROGRAM_ID }} \
-            https://github.com/md1god/MD- \
-            || echo "Remote verification submission failed or is still processing - check Solscan later"
+            --mount-path programs/md1usd_solana \
+            -u mainnet-beta \
+            https://github.com/md1god/MD1usd_solana \
+            || echo "PDA upload failed or RPC issue - continuing"
+
+      - name: Submit remote verification job (OtterSec)
+        run: |
+          solana-verify remote submit-job \
+            --program-id ${{ env.PROGRAM_ID }} \
+            --uploader 7WKER22cnTne1XjLk8EUiyVcTdKau9caYpaSSLXTeQUn \
+            || echo "Remote job submission failed or still processing - check Solscan later"
