@@ -93,7 +93,7 @@ jobs:
           solana config set --keypair verify-authority.json --url mainnet-beta
           yes | solana-verify verify-from-repo \
             --program-id ${{ env.PROGRAM_ID }} \
-            --mount-path programs/md1usd_solana \
+            --library-name md1usd_solana \
             -u mainnet-beta \
             https://github.com/md1god/MD1usd_solana \
             || echo "PDA upload failed or RPC issue - continuing"
