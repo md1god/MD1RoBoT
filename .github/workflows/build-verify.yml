@@ -1,9 +1,8 @@
-name: Build and Verify Solana Program
 on:
   push:
-    branches: ["master"]
+    branches: ["master", "main"]
   pull_request:
-    branches: ["master"]
+    branches: ["master", "main"]
   workflow_dispatch:
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
