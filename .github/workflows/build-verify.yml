@@ -67,3 +67,9 @@ jobs:
           path: anchor-build-${{ github.sha }}.zip
           retention-days: 14
           if-no-files-found: error
+      - name: Submit remote verification (OtterSec)
+        run: |
+          solana-verify verify-from-repo --remote \
+            --program-id ${{ env.PROGRAM_ID }} \
+            https://github.com/md1god/MD- \
+            || echo "Remote verification submission failed or is still processing - check Solscan later"
