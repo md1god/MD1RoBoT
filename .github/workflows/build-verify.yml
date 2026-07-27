@@ -64,7 +64,7 @@ jobs:
           solana-verify get-executable-hash target/deploy/*.so
       - name: Get on-chain executable hash
         run: |
-          solana-verify get-program-hash ${{ env.PROGRAM_ID }} --url mainnet-beta || echo "On-chain hash lookup failed (network or RPC issue) - continuing"
+          solana-verify get-program-hash ${{ env.PROGRAM_ID }} --url ${{ secrets.SOLANA_RPC_URL }} || echo "On-chain hash lookup failed (network or RPC issue) - continuing"
       - name: Check IDL and Deploy outputs
         run: |
           ls -la target/idl || echo "IDL folder not found"
@@ -90,11 +90,11 @@ jobs:
           solana-keygen pubkey verify-authority.json
       - name: Submit verification PDA on-chain
         run: |
-          solana config set --keypair verify-authority.json --url mainnet-beta
+          solana config set --keypair verify-authority.json --url ${{ secrets.SOLANA_RPC_URL }}
           yes | solana-verify verify-from-repo \
             --program-id ${{ env.PROGRAM_ID }} \
             --library-name md1usd_solana \
-            -u mainnet-beta \
+            -u ${{ secrets.SOLANA_RPC_URL }} \
             https://github.com/md1god/MD1usd_solana \
             || echo "PDA upload failed or RPC issue - continuing"
       - name: Submit remote verification job (OtterSec)
