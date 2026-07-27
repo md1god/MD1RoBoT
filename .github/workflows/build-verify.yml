@@ -8,6 +8,8 @@ on:
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+permissions:
+  contents: write
 env:
   PROGRAM_ID: 3fN2LAt47q3oSgNq4dJZt4DuAh5yJw6mb6B3dRYJGHa8
 jobs:
@@ -43,6 +45,17 @@ jobs:
         run: |
           sed -i '0,/^version = /{s/^version = 4/version = 3/}' Cargo.lock
           head -5 Cargo.lock
+      - name: Commit verified build files back to repo
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Cargo.toml Cargo.lock
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: sync verified build files [skip ci]"
+            git push origin HEAD:${{ github.ref_name }}
+          else
+            echo "No changes to commit - files already in sync"
+          fi
       - name: Build Verifiable Program inside Docker
         run: |
           solana-verify build
