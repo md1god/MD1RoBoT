@@ -47,7 +47,7 @@ jobs:
 
       - name: Submit verification PDA using the existing build (skip rebuild)
         run: |
-          solana-verify verify-from-repo https://github.com/md1god/MD1usd_solana \
+          yes | solana-verify verify-from-repo https://github.com/md1god/MD1usd_solana \
             --program-id ${{ env.PROGRAM_ID }} \
             --library-name md1usd_solana \
             --skip-build \
