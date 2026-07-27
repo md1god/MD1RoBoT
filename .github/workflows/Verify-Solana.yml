@@ -45,6 +45,10 @@ jobs:
           echo '${{ secrets.VERIFY_AUTHORITY_KEYPAIR }}' > verify-authority.json
           solana-keygen pubkey verify-authority.json
 
+      - name: Configure Solana CLI (creates the config file solana-verify needs)
+        run: |
+          solana config set --keypair verify-authority.json --url ${{ secrets.SOLANA_RPC_URL }}
+
       - name: Submit verification PDA using the existing build (skip rebuild)
         run: |
           yes | solana-verify verify-from-repo https://github.com/md1god/MD1usd_solana \
