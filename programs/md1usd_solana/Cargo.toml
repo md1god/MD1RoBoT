@@ -22,3 +22,4 @@ custom-panic = []
 [dependencies]
 anchor-lang = "0.30.1"
 anchor-spl = { version = "0.30.1", features = ["metadata"] }
+solana-program = "1.18.26"
