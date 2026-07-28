@@ -43,9 +43,9 @@ jobs:
       - name: Switch to Stable Rust to install AVM & Anchor CLI
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install AVM and Anchor v0.30.1 (matching project)
+      - name: Install AVM and Anchor v0.30.1 safely from crates.io
         run: |
-          cargo install --git https://github.com/coral-xyz/anchor avm --locked --force
+          cargo install avm --locked --force
           avm install 0.30.1
           avm use 0.30.1
 
