@@ -19,7 +19,8 @@ RUN sh -c "$(curl -sSfL https://release.solana.com/v4.1.0-beta.3/install)"
 ENV PATH="/root/.local/share/solana/install/active_release/bin:/root/.cargo/bin:$PATH"
 
 # 2. تثبيت AVM لجلب نسخة anchor-cli 1.1.2 الجاهزة بدون الحاجة لبنائها من المصدر
-RUN cargo install --locked avm
+RUN cargo install --git https://github.com/coral-xyz/anchor avm --locked --force
+
 RUN avm install 1.1.2
 RUN avm use 1.1.2
 
