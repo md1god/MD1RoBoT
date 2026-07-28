@@ -1,40 +1,26 @@
-# Build stage
-FROM rust:1.89.0 as builder
+FROM rust:1.96.1
 
-WORKDIR /app
-
-# Install Anchor CLI and dependencies
+# تثبيت الحزم الأساسية وأدوات النظام
 RUN apt-get update && apt-get install -y \
+    curl \
     build-essential \
-    pkg-config \
     libssl-dev \
+    pkg-config \
+    git \
+    libudev-dev \
+    llvm \
+    clang \
     && rm -rf /var/lib/apt/lists/*
 
-RUN cargo install anchor-cli --locked
+# تثبيت Solana CLI بالإصدار المطلوب
+RUN sh -c "$(curl -sSfL https://release.solana.com/v4.1.0-beta.3/install)"
+ENV PATH="/root/.local/share/solana/install/active_release/bin:$PATH"
 
-# Copy workspace manifests
-COPY Cargo.toml Cargo.lock rust-toolchain.toml Anchor.toml ./
-COPY programs ./programs
-
-# Build the project
-RUN cargo build --release
-
-# Runtime stage
-FROM debian:bookworm-slim
+# تثبيت Anchor CLI بالإصدار 1.1.2
+RUN cargo install --git https://github.com/coral-xyz/anchor --tag v1.1.2 anchor-cli --locked
 
 WORKDIR /app
+COPY . .
 
-# Install minimal runtime dependencies
-RUN apt-get update && apt-get install -y \
-    ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
-
-# Copy build artifacts from builder
-COPY --from=builder /app/target/release /app/target/release
-COPY --from=builder /usr/local/cargo/bin/anchor /usr/local/bin/anchor
-COPY Anchor.toml ./
-COPY programs ./programs
-
-# Use anchor as the default entry point
-ENTRYPOINT ["anchor"]
-CMD ["--version"]
+# تنفيذ عملية البناء البرمجي للبرنامج
+RUN anchor build
