@@ -1,4 +1,4 @@
-name: 🔍 Build, Verify & Get Solscan Green Badge
+name: 🔍 Build, Verify, Generate IDL & Get Green Badge
 on:
   push:
     branches: ["master", "main"]
@@ -40,14 +40,24 @@ jobs:
         run: |
           sed -i 's/rust-version = "1.89.0"/rust-version = "1.75.0"/' Cargo.toml
 
-      - name: Switch to Stable Rust to install solana-verify CLI
+      - name: Switch to Stable Rust to install AVM & Anchor CLI
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install solana-verify CLI (using stable cargo)
+      - name: Install AVM and Anchor v0.30.1 (matching project)
+        run: |
+          cargo install --git https://github.com/coral-xyz/anchor avm --locked --force
+          avm install 0.30.1
+          avm use 0.30.1
+
+      - name: Build Anchor project & Generate IDL
+        run: |
+          anchor build
+
+      - name: Install solana-verify CLI
         run: |
           cargo install solana-verify --locked
 
-      - name: Install Nightly Rust (only to resolve minimal-version lockfile)
+      - name: Install Nightly Rust (to resolve minimal-version lockfile)
         uses: dtolnay/rust-toolchain@nightly
 
       - name: Generate lockfile using OLDEST compatible dependency versions
@@ -59,13 +69,13 @@ jobs:
         run: |
           sed -i '0,/^version = /{s/^version = 4/version = 3/}' Cargo.lock
 
-      - name: Commit verified build files back to repo
+      - name: Commit IDL and verified build files back to repo (Crucial for OtterSec)
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Cargo.toml Cargo.lock
+          git add Cargo.toml Cargo.lock target/idl/ md1usd_solana.json || true
           if ! git diff --cached --quiet; then
-            git commit -m "chore: sync verified build files [skip ci]"
+            git commit -m "chore: sync IDL and verified build files [skip ci]"
             git push origin HEAD:${{ github.ref_name }}
           else
             echo "No changes to commit - files already in sync"
@@ -114,16 +124,6 @@ jobs:
           echo '${{ secrets.VERIFY_AUTHORITY_KEYPAIR }}' > verify-authority.json
           solana-keygen pubkey verify-authority.json
 
-      - name: Check wallet balance and required rent
-        run: |
-          solana config set --keypair verify-authority.json --url ${{ secrets.SOLANA_RPC_URL }}
-          echo "---- Current balance ----"
-          solana balance --url ${{ secrets.SOLANA_RPC_URL }}
-          FILE=programs/md1usd_solana/target/deploy/md1usd_solana.so
-          [ ! -f "$FILE" ] && FILE=target/deploy/md1usd_solana.so
-          echo "---- Rent required for this program size ----"
-          solana rent $(stat -c%s "$FILE") --url ${{ secrets.SOLANA_RPC_URL }}
-
       - name: Deploy upgraded verifiable build (GATED - only runs if explicitly confirmed)
         if: ${{ github.event.inputs.confirm_deploy == 'DEPLOY' }}
         run: |
@@ -134,22 +134,20 @@ jobs:
             --upgrade-authority verify-authority.json \
             --url ${{ secrets.SOLANA_RPC_URL }}
 
-      - name: Get on-chain executable hash (after deploy/check)
-        run: |
-          solana-verify get-program-hash ${{ env.PROGRAM_ID }} --url ${{ secrets.SOLANA_RPC_URL }} || echo "RPC issue - continuing"
-
-      - name: Submit verification PDA on-chain (Runs automatically to get green badge)
+      - name: Submit verification PDA on-chain (Force Solana v1.18.26)
         run: |
           yes | solana-verify verify-from-repo \
             --program-id ${{ env.PROGRAM_ID }} \
             --library-name md1usd_solana \
+            --solana-version 1.18.26 \
             -u ${{ secrets.SOLANA_RPC_URL }} \
             https://github.com/md1god/MD1usd_solana \
             || echo "PDA upload failed - continuing"
 
-      - name: Submit remote verification job to OtterSec (Runs automatically for Solscan badge)
+      - name: Submit remote verification job to OtterSec (Force Solana v1.18.26)
         run: |
           solana-verify remote submit-job \
             --program-id ${{ env.PROGRAM_ID }} \
             --uploader 7WKER22cnTne1XjLk8EUiyVcTdKau9caYpaSSLXTeQUn \
+            --solana-version 1.18.26 \
             || echo "Remote job failed or processing - check Solscan later"
