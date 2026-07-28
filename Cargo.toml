@@ -6,7 +6,8 @@ resolver = "2"
 
 [workspace.package]
 edition = "2021"
-rust-version = "1.75.0"
+rust-version = "1.89.0"
+
 [profile.release]
 overflow-checks = true
 lto = "fat"
@@ -15,7 +16,3 @@ codegen-units = 1
 opt-level = 3
 incremental = false
 codegen-units = 1
-[workspace.dependencies]
-ahash = "0.8.11"
-proc-macro2 = "1.0.86"
-blake3 = "1.5.4"
