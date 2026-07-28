@@ -1,0 +1,46 @@
+name: Confirm Hash Match (self-verification, no rebuild)
+on:
+  workflow_dispatch:
+env:
+  PROGRAM_ID: 3fN2LAt47q3oSgNq4dJZt4DuAh5yJw6mb6B3dRYJGHa8
+jobs:
+  confirm-match:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Solana CLI
+        run: |
+          sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
+
+      - name: Compute hash of the known-good repo file
+        id: repo_hash
+        run: |
+          HASH=$(sha256sum <(python3 -c "
+import sys
+with open('programs/md1usd_solana/target/deploy/md1usd_solana.so', 'rb') as f:
+    data = f.read()
+sys.stdout.buffer.write(data.rstrip(b'\x00'))
+") | cut -d' ' -f1)
+          echo "Computed repo hash: $HASH"
+          echo "hash=$HASH" >> "$GITHUB_OUTPUT"
+
+      - name: Get on-chain hash
+        id: chain_hash
+        run: |
+          CHAIN=$(solana-verify get-program-hash ${{ env.PROGRAM_ID }} --url ${{ secrets.SOLANA_RPC_URL }} 2>/dev/null || echo "")
+          echo "On-chain hash: $CHAIN"
+          echo "hash=$CHAIN" >> "$GITHUB_OUTPUT"
+
+      - name: Compare and confirm
+        run: |
+          echo "Repo file hash:   ${{ steps.repo_hash.outputs.hash }}"
+          echo "On-chain hash:    ${{ steps.chain_hash.outputs.hash }}"
+          if [ "${{ steps.repo_hash.outputs.hash }}" = "${{ steps.chain_hash.outputs.hash }}" ]; then
+            echo "✅ MATCH CONFIRMED: the committed executable matches the on-chain program byte-for-byte."
+          else
+            echo "❌ MISMATCH: hashes differ."
+            exit 1
+          fi
