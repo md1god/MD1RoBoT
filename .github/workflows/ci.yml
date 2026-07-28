@@ -13,7 +13,7 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: read
+  contents: write
 
 env:
   PROGRAM_ID: 3fN2LAt47q3oSgNq4dJZt4DuAh5yJw6mb6B3dRYJGHa8
@@ -91,6 +91,23 @@ jobs:
       # وادفعها كـ commit ثابت، ولا تجعل CI يغيّرها.
       # ملاحظة: تم حذف خطوة "anchor build" المحلية لأنها كانت تفشل بخطأ IDL/proc-macro2 غير مرتبط بالمطابقة،
       # والبناء الفعلي المستخدم في الهاش يتم حصرًا عبر solana-verify build بالأسفل.
+
+      # ---- ضمان وجود Cargo.lock قبل البناء داخل Docker (بدون تغيير الحزم) ----
+      - name: Ensure Cargo.lock exists
+        run: |
+          if [ ! -f Cargo.lock ]; then
+            cargo generate-lockfile
+          fi
+
+      - name: Commit Cargo.lock if newly generated
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Cargo.lock
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: add missing Cargo.lock [skip ci]"
+            git push origin HEAD:${{ github.ref_name }}
+          fi
 
       # ---- حذف أي ملف .so قديم مرفوع مسبقًا في الريبو (كما يظهر في target/deploy) ----
       # لضمان أن الهاش المحسوب لاحقًا هو ناتج البناء الطازج من solana-verify فقط، وليس ملفًا قديمًا مرفوعًا
