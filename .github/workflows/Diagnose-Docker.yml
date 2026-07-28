@@ -1,4 +1,4 @@
-name: 🔍 Build, Verify, Generate IDL & Get Green Badge
+name: 👻 Build, Verify, Generate IDL & Get Green Badge
 
 on:
   push:
