@@ -1,4 +1,4 @@
-name: 🔍 Build, Verify & Confirm Hash Match
+name: 🔍 Build, Verify & Get Solscan Green Badge
 on:
   push:
     branches: ["master", "main"]
@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       confirm_deploy:
-        description: 'اكتب DEPLOY بالظبط عشان تفعل نشر التحديث الفعلي على mainnet'
+        description: 'اكتب DEPLOY فقط إذا كنت تريد إعادة نشر العقد (اختياري، اتركه فارغاً للحصول على البادج فقط)'
         required: false
         default: 'no'
 concurrency:
@@ -124,7 +124,7 @@ jobs:
           echo "---- Rent required for this program size ----"
           solana rent $(stat -c%s "$FILE") --url ${{ secrets.SOLANA_RPC_URL }}
 
-      - name: Deploy upgraded verifiable build (GATED - only runs if confirmed)
+      - name: Deploy upgraded verifiable build (GATED - only runs if explicitly confirmed)
         if: ${{ github.event.inputs.confirm_deploy == 'DEPLOY' }}
         run: |
           FILE=programs/md1usd_solana/target/deploy/md1usd_solana.so
@@ -134,12 +134,11 @@ jobs:
             --upgrade-authority verify-authority.json \
             --url ${{ secrets.SOLANA_RPC_URL }}
 
-      - name: Get on-chain executable hash (after deploy)
+      - name: Get on-chain executable hash (after deploy/check)
         run: |
           solana-verify get-program-hash ${{ env.PROGRAM_ID }} --url ${{ secrets.SOLANA_RPC_URL }} || echo "RPC issue - continuing"
 
-      - name: Submit verification PDA on-chain
-        if: ${{ github.event.inputs.confirm_deploy == 'DEPLOY' }}
+      - name: Submit verification PDA on-chain (Runs automatically to get green badge)
         run: |
           yes | solana-verify verify-from-repo \
             --program-id ${{ env.PROGRAM_ID }} \
@@ -148,8 +147,7 @@ jobs:
             https://github.com/md1god/MD1usd_solana \
             || echo "PDA upload failed - continuing"
 
-      - name: Submit remote verification job (OtterSec)
-        if: ${{ github.event.inputs.confirm_deploy == 'DEPLOY' }}
+      - name: Submit remote verification job to OtterSec (Runs automatically for Solscan badge)
         run: |
           solana-verify remote submit-job \
             --program-id ${{ env.PROGRAM_ID }} \
