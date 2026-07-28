@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use anchor_lang::solana_program::pubkey;
+use anchor_lang::prelude::pubkey;
 use anchor_spl::token::{self, Burn, Mint, MintTo, Token, TokenAccount, Transfer};
 use anchor_spl::metadata::{
     create_metadata_accounts_v3, CreateMetadataAccountsV3, Metadata,
