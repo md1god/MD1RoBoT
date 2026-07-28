@@ -7,7 +7,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     container:
-      image: solanafoundation/anchor:v1.1.2
+      image: solanafoundation/anchor:latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
