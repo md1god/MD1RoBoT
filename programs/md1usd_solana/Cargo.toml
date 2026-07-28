@@ -19,3 +19,6 @@ anchor-debug = []
 custom-heap = []
 custom-panic = []
 
+[dependencies]
+anchor-lang = "0.30.1"
+anchor-spl = { version = "0.30.1", features = ["metadata"] }
