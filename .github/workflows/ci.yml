@@ -1,4 +1,4 @@
-name: Build and Verify Solana Program
+name: 🔍 Build, Verify & Confirm Hash Match
 on:
   push:
     branches: ["master", "main"]
@@ -75,9 +75,39 @@ jobs:
         run: |
           solana-verify build --library-name md1usd_solana
 
-      - name: Get local executable hash
+      - name: Compute hash of the local file and on-chain program (strip trailing zero bytes)
         run: |
-          solana-verify get-executable-hash target/deploy/md1usd_solana.so
+          FILE=programs/md1usd_solana/target/deploy/md1usd_solana.so
+          if [ ! -f "$FILE" ]; then
+            FILE=target/deploy/md1usd_solana.so
+          fi
+          
+          echo "Using local file: $FILE"
+          ORIGINAL_SIZE=$(stat -c%s "$FILE")
+          STRIPPED_SIZE=$(python3 -c "
+          data = open('$FILE','rb').read().rstrip(b'\x00')
+          print(len(data))
+          ")
+          head -c "$STRIPPED_SIZE" "$FILE" > stripped.so
+          echo "Local file - Original size: $ORIGINAL_SIZE, Stripped size: $STRIPPED_SIZE"
+          echo "Local stripped hash:"
+          sha256sum stripped.so
+
+          echo "Fetching on-chain program..."
+          solana program dump ${{ env.PROGRAM_ID }} onchain.so --url ${{ secrets.SOLANA_RPC_URL }}
+          ONCHAIN_STRIPPED_SIZE=$(python3 -c "
+          data = open('onchain.so','rb').read().rstrip(b'\x00')
+          print(len(data))
+          ")
+          head -c "$ONCHAIN_STRIPPED_SIZE" onchain.so > onchain_stripped.so
+          echo "On-chain stripped hash:"
+          sha256sum onchain_stripped.so
+          
+          if cmp -s stripped.so onchain_stripped.so; then
+            echo "SUCCESS: Local and on-chain hashes match perfectly!"
+          else
+            echo "WARNING: Hashes do not match yet."
+          fi
 
       - name: Setup verify authority keypair
         run: |
@@ -89,13 +119,17 @@ jobs:
           solana config set --keypair verify-authority.json --url ${{ secrets.SOLANA_RPC_URL }}
           echo "---- Current balance ----"
           solana balance --url ${{ secrets.SOLANA_RPC_URL }}
+          FILE=programs/md1usd_solana/target/deploy/md1usd_solana.so
+          [ ! -f "$FILE" ] && FILE=target/deploy/md1usd_solana.so
           echo "---- Rent required for this program size ----"
-          solana rent $(stat -c%s target/deploy/md1usd_solana.so) --url ${{ secrets.SOLANA_RPC_URL }}
+          solana rent $(stat -c%s "$FILE") --url ${{ secrets.SOLANA_RPC_URL }}
 
       - name: Deploy upgraded verifiable build (GATED - only runs if confirmed)
         if: ${{ github.event.inputs.confirm_deploy == 'DEPLOY' }}
         run: |
-          solana program deploy target/deploy/md1usd_solana.so \
+          FILE=programs/md1usd_solana/target/deploy/md1usd_solana.so
+          [ ! -f "$FILE" ] && FILE=target/deploy/md1usd_solana.so
+          solana program deploy "$FILE" \
             --program-id ${{ env.PROGRAM_ID }} \
             --upgrade-authority verify-authority.json \
             --url ${{ secrets.SOLANA_RPC_URL }}
