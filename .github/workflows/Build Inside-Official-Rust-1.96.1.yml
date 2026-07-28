@@ -1,33 +1,32 @@
-name: Build Inside Official Rust 1.96.1 Docker Image
+name: Build Using Official Prebuilt Anchor Image
 on:
   workflow_dispatch:
 env:
   PROGRAM_ID: 3fN2LAt47q3oSgNq4dJZt4DuAh5yJw6mb6B3dRYJGHa8
 jobs:
-  build-in-docker:
+  build:
     runs-on: ubuntu-latest
     container:
-      image: rust:1.96.1
+      image: solanafoundation/anchor:v1.1.2
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Solana CLI 4.1.0-beta.3
+      - name: Show pre-installed versions
         run: |
-          apt-get update && apt-get install -y curl
-          sh -c "$(curl -sSfL https://release.anza.xyz/v4.1.0-beta.3/install)"
-          echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
-
-      - name: Install anchor-cli 0.31.1 (newer patch, compatible with modern Rust)
-        run: |
-          cargo install --git https://github.com/solana-foundation/anchor anchor-cli --tag v0.31.1 --locked --force
-          
+          rustc --version
+          anchor --version
+          solana --version
 
       - name: Build
         run: |
           anchor build
 
-          - name: Show generated IDL
+      - name: Get hash of build
+        run: |
+          sha256sum target/deploy/md1usd_solana.so
+
+      - name: Show generated IDL
         run: |
           cat target/idl/md1usd_solana.json
 
@@ -36,7 +35,3 @@ jobs:
         with:
           name: md1usd_solana-idl
           path: target/idl/md1usd_solana.json
-
-      - name: Get hash
-        run: |
-          sha256sum target/deploy/md1usd_solana.so
