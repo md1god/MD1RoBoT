@@ -20,12 +20,13 @@ env:
   LIBRARY_NAME: md1usd_solana
   REPO_URL: https://github.com/md1god/MD1usd_solana
   # ثبّت هذه الأرقام على نفس الإصدارات المستخدمة وقت أول نشر فعلي للبرنامج
-  SOLANA_CLI_VERSION: 1.18.22
+  SOLANA_CLI_VERSION: 1.18.26
   ANCHOR_CLI_VERSION: 0.30.1
   RUST_TOOLCHAIN: 1.75.0
   SOLANA_VERIFY_VERSION: 0.3.1
   # صورة Docker الثابتة التي يجب أن يُبنى بها البرنامج دومًا (بدلاً من ترك solana-verify يستنتجها تلقائيًا)
-  VERIFY_BASE_IMAGE: solanafoundation/solana-verifiable-build:1.18.22
+  # هذا الرقم يجب أن يطابق بالضبط "Program Solana version" الذي ظهر في آخر بناء ناجح محليًا
+  VERIFY_BASE_IMAGE: solanafoundation/solana-verifiable-build:1.18.26
 
 jobs:
   build-and-verify:
@@ -88,10 +89,14 @@ jobs:
       # ---- لا تحدّث Cargo.lock تلقائيًا إطلاقًا هنا ----
       # إن احتجت تثبيت نسخة معينة من ahash افعلها يدويًا محليًا مرة واحدة
       # وادفعها كـ commit ثابت، ولا تجعل CI يغيّرها.
+      # ملاحظة: تم حذف خطوة "anchor build" المحلية لأنها كانت تفشل بخطأ IDL/proc-macro2 غير مرتبط بالمطابقة،
+      # والبناء الفعلي المستخدم في الهاش يتم حصرًا عبر solana-verify build بالأسفل.
 
-      - name: Build with Anchor (sanity check only, not used for verification)
+      # ---- حذف أي ملف .so قديم مرفوع مسبقًا في الريبو (كما يظهر في target/deploy) ----
+      # لضمان أن الهاش المحسوب لاحقًا هو ناتج البناء الطازج من solana-verify فقط، وليس ملفًا قديمًا مرفوعًا
+      - name: Remove any pre-existing .so artifacts from repo
         run: |
-          anchor build || true
+          find . -name "${{ env.LIBRARY_NAME }}.so" -type f -print -delete
 
       # ---- البناء القابل للتحقق داخل Docker عبر صورة مثبّتة بدقة (وليس استنتاجًا تلقائيًا) ----
       - name: Build Verifiable Program inside pinned Docker image
