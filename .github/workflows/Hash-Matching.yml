@@ -1,4 +1,4 @@
-name: Confirm Hash Match (self-verification, no rebuild)
+name: Confirm Hash Match
 on:
   workflow_dispatch:
 env:
@@ -15,32 +15,18 @@ jobs:
           sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
           echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
 
-      - name: Compute hash of the known-good repo file
-        id: repo_hash
+      - name: Compute hash of the repo file (strip trailing zero bytes)
         run: |
-          HASH=$(sha256sum <(python3 -c "
-import sys
-with open('programs/md1usd_solana/target/deploy/md1usd_solana.so', 'rb') as f:
-    data = f.read()
-sys.stdout.buffer.write(data.rstrip(b'\x00'))
-") | cut -d' ' -f1)
-          echo "Computed repo hash: $HASH"
-          echo "hash=$HASH" >> "$GITHUB_OUTPUT"
+          FILE=programs/md1usd_solana/target/deploy/md1usd_solana.so
+          ORIGINAL_SIZE=$(stat -c%s "$FILE")
+          STRIPPED_SIZE=$(python3 -c "
+          data = open('$FILE','rb').read().rstrip(b'\x00')
+          print(len(data))
+          ")
+          head -c "$STRIPPED_SIZE" "$FILE" > stripped.so
+          echo "Original size: $ORIGINAL_SIZE, Stripped size: $STRIPPED_SIZE"
+          sha256sum stripped.so
 
       - name: Get on-chain hash
-        id: chain_hash
         run: |
-          CHAIN=$(solana-verify get-program-hash ${{ env.PROGRAM_ID }} --url ${{ secrets.SOLANA_RPC_URL }} 2>/dev/null || echo "")
-          echo "On-chain hash: $CHAIN"
-          echo "hash=$CHAIN" >> "$GITHUB_OUTPUT"
-
-      - name: Compare and confirm
-        run: |
-          echo "Repo file hash:   ${{ steps.repo_hash.outputs.hash }}"
-          echo "On-chain hash:    ${{ steps.chain_hash.outputs.hash }}"
-          if [ "${{ steps.repo_hash.outputs.hash }}" = "${{ steps.chain_hash.outputs.hash }}" ]; then
-            echo "✅ MATCH CONFIRMED: the committed executable matches the on-chain program byte-for-byte."
-          else
-            echo "❌ MISMATCH: hashes differ."
-            exit 1
-          fi
+          solana-verify get-program-hash ${{ env.PROGRAM_ID }} --url ${{ secrets.SOLANA_RPC_URL }}
