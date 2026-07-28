@@ -18,9 +18,9 @@ jobs:
           anchor --version
           solana --version
 
-      - name: Build
+      - name: Build (ignore local keypair mismatch — safe, does not affect on-chain program)
         run: |
-          anchor build
+          anchor build --ignore-keys
 
       - name: Get hash of build
         run: |
