@@ -35,6 +35,16 @@ jobs:
           avm use 0.30.1
           anchor --version
 
+          - name: Generate IDL from source
+        run: |
+          anchor idl build > programs/md1usd_solana/idl/md1usd_solana.json || anchor build
+
+      - name: Upload IDL
+        uses: actions/upload-artifact@v4
+        with:
+          name: md1usd_solana-idl
+          path: target/idl/md1usd_solana.json
+
       - name: Build verifiable program with Anchor itself (with retry for network flakiness)
         run: |
           for i in 1 2 3; do
