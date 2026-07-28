@@ -83,7 +83,7 @@ jobs:
 
       - name: Build Verifiable Program inside Docker
         run: |
-          solana-verify build --library-name md1usd_solana --solana-version 4.1.0-beta.3 || true
+          solana-verify build --library-name md1usd_solana || true
 
       - name: Setup verify authority keypair
         run: |
@@ -105,7 +105,6 @@ jobs:
           yes | solana-verify verify-from-repo \
             --program-id ${{ env.PROGRAM_ID }} \
             --library-name md1usd_solana \
-            --solana-version 4.1.0-beta.3 \
             -u ${{ secrets.SOLANA_RPC_URL }} \
             https://github.com/md1god/MD1usd_solana \
             || echo "PDA upload failed - continuing"
@@ -115,5 +114,4 @@ jobs:
           solana-verify remote submit-job \
             --program-id ${{ env.PROGRAM_ID }} \
             --uploader 7WKER22cnTne1XjLk8EUiyVcTdKau9caYpaSSLXTeQUn \
-            --solana-version 4.1.0-beta.3 \
             || echo "Remote job failed or processing - check Solscan later"
