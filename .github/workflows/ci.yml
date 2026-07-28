@@ -7,7 +7,7 @@ on:
   pull_request:
     branches:
       - "main"
-  workflow_dispatch: # هذا السطر يظهر زر التشغيل اليدوي (Run workflow) في جيت هب
+  workflow_dispatch:
 
 jobs:
   docker:
@@ -19,7 +19,7 @@ jobs:
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with:
-          username: ${{ vars.DOCKER_USER }}
+          username: "dido599999"
           password: ${{ secrets.DOCKER_PAT }}
 
       - name: Set up Docker Buildx (Cloud)
@@ -33,5 +33,5 @@ jobs:
         with:
           context: .
           file: ./Dockerfile
-          tags: "${{ vars.DOCKER_USER }}/md1usd-verifier:latest"
+          tags: "dido599999/md1usd-verifier:latest"
           outputs: ${{ github.event_name == 'pull_request' && 'type=cacheonly' || 'type=registry' }}
