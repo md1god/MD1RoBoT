@@ -69,18 +69,13 @@ jobs:
           export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
           solana --version
 
-      # ---- تثبيت Anchor بإصدار محدد بدقة عبر AVM ----
-      - name: Install AVM and pinned Anchor CLI
+      # ---- تثبيت Anchor بإصدار محدد بدقة مباشرة من crates.io (بدون AVM لتفادي أحدث كود anchor من git) ----
+      - name: Install pinned Anchor CLI from crates.io
         run: |
-          cargo install --git https://github.com/coral-xyz/anchor avm --locked --force
-          avm install ${{ env.ANCHOR_CLI_VERSION }}
-          avm use ${{ env.ANCHOR_CLI_VERSION }}
-          echo "$HOME/.avm/bin" >> $GITHUB_PATH
+          cargo install anchor-cli --version ${{ env.ANCHOR_CLI_VERSION }} --locked --force
 
       - name: Confirm Anchor version
-        run: |
-          export PATH="$HOME/.avm/bin:$PATH"
-          anchor --version
+        run: anchor --version
 
       # ---- تثبيت solana-verify بإصدار محدد بدقة (وليس آخر إصدار) ----
       - name: Install pinned solana-verify CLI
