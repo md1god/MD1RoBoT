@@ -21,6 +21,54 @@ jobs:
         with:
           driver: cloud
           endpoint: "dido599999/moha"
+          name: Build with Anchor CLI (matching original toolchain)
+on:
+  workflow_dispatch:
+env:
+  PROGRAM_ID: 3fN2LAt47q3oSgNq4dJZt4DuAh5yJw6mb6B3dRYJGHa8
+jobs:
+  build-with-anchor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Update rustup and install Rust 1.96.1 (matches original build)
+        run: |
+          rustup self update
+          rustup toolchain install 1.96.1
+          rustup default 1.96.1
+          rustc --version
+          cargo --version
+
+      - name: Install AVM (matches original build)
+        run: |
+          rustup run 1.96.1 cargo install --git https://github.com/solana-foundation/anchor avm --locked --force
+          echo "$HOME/.avm/bin" >> $GITHUB_PATH
+
+      - name: Install Solana CLI 4.1.0-beta.3 (matches original build)
+        run: |
+          sh -c "$(curl -sSfL https://release.anza.xyz/v4.1.0-beta.3/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
+
+      - name: Install anchor-cli 0.30.1 as required by anchor-lang dependency
+        run: |
+          avm install 0.30.1
+          avm use 0.30.1
+          anchor --version
+
+      - name: Build verifiable program with Anchor itself (with retry for network flakiness)
+        run: |
+          for i in 1 2 3; do
+            anchor build --verifiable --solana-version 4.1.0-beta.3 && break
+            echo "Attempt $i failed, retrying in 15s..."
+            sleep 15
+          done
+
+      - name: Get hash of the verifiable build
+        run: |
+          sha256sum target/verifiable/md1usd_solana.so
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
