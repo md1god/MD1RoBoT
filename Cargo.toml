@@ -7,6 +7,10 @@ resolver = "2"
 [workspace.package]
 edition = "2021"
 rust-version = "1.75.0"
+
+[workspace.dependencies]
+proc-macro2 = "1.0.86"
+
 [profile.release]
 overflow-checks = true
 lto = "fat"
