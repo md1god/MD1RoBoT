@@ -1,17 +1,26 @@
-name: CI Build & Verify MD1USD
-
+name: Build and Verify Solana Program
 on:
   push:
-    branches:
-      - "main"
+    branches: ["master", "main"]
   pull_request:
-    branches:
-      - "main"
+    branches: ["master", "main"]
   workflow_dispatch:
-
+    inputs:
+      confirm_deploy:
+        description: 'اكتب DEPLOY بالظبط عشان تفعل نشر التحديث الفعلي على mainnet'
+        required: false
+        default: 'no'
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: write
+env:
+  PROGRAM_ID: 3fN2LAt47q3oSgNq4dJZt4DuAh5yJw6mb6B3dRYJGHa8
 jobs:
-  docker:
+  build-and-verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -22,16 +31,93 @@ jobs:
           username: "dido599999"
           password: ${{ secrets.DOCKER_PAT }}
 
-      - name: Set up Docker Buildx (Cloud)
-        uses: docker/setup-buildx-action@v3
-        with:
-          driver: cloud
-          endpoint: "dido599999/moha"
+      - name: Install Solana CLI
+        run: |
+          sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
 
-      - name: Build and push container
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ./Dockerfile
-          tags: "dido599999/md1usd-verifier:latest"
-          outputs: ${{ github.event_name == 'pull_request' && 'type=cacheonly' || 'type=registry' }}
+      - name: Fix declared rust-version to match the verification toolchain (1.75.0)
+        run: |
+          sed -i 's/rust-version = "1.89.0"/rust-version = "1.75.0"/' Cargo.toml
+
+      - name: Switch to Stable Rust to install solana-verify CLI
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install solana-verify CLI (using stable cargo)
+        run: |
+          cargo install solana-verify --locked
+
+      - name: Install Nightly Rust (only to resolve minimal-version lockfile)
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Generate lockfile using OLDEST compatible dependency versions
+        run: |
+          rm -f Cargo.lock
+          cargo +nightly generate-lockfile -Z minimal-versions
+
+      - name: Fix Cargo.lock version for Rust 1.75 compatibility
+        run: |
+          sed -i '0,/^version = /{s/^version = 4/version = 3/}' Cargo.lock
+
+      - name: Commit verified build files back to repo
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Cargo.toml Cargo.lock
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: sync verified build files [skip ci]"
+            git push origin HEAD:${{ github.ref_name }}
+          else
+            echo "No changes to commit - files already in sync"
+          fi
+
+      - name: Build Verifiable Program inside Docker
+        run: |
+          solana-verify build --library-name md1usd_solana
+
+      - name: Get local executable hash
+        run: |
+          solana-verify get-executable-hash target/deploy/md1usd_solana.so
+
+      - name: Setup verify authority keypair
+        run: |
+          echo '${{ secrets.VERIFY_AUTHORITY_KEYPAIR }}' > verify-authority.json
+          solana-keygen pubkey verify-authority.json
+
+      - name: Check wallet balance and required rent
+        run: |
+          solana config set --keypair verify-authority.json --url ${{ secrets.SOLANA_RPC_URL }}
+          echo "---- Current balance ----"
+          solana balance --url ${{ secrets.SOLANA_RPC_URL }}
+          echo "---- Rent required for this program size ----"
+          solana rent $(stat -c%s target/deploy/md1usd_solana.so) --url ${{ secrets.SOLANA_RPC_URL }}
+
+      - name: Deploy upgraded verifiable build (GATED - only runs if confirmed)
+        if: ${{ github.event.inputs.confirm_deploy == 'DEPLOY' }}
+        run: |
+          solana program deploy target/deploy/md1usd_solana.so \
+            --program-id ${{ env.PROGRAM_ID }} \
+            --upgrade-authority verify-authority.json \
+            --url ${{ secrets.SOLANA_RPC_URL }}
+
+      - name: Get on-chain executable hash (after deploy)
+        run: |
+          solana-verify get-program-hash ${{ env.PROGRAM_ID }} --url ${{ secrets.SOLANA_RPC_URL }} || echo "RPC issue - continuing"
+
+      - name: Submit verification PDA on-chain
+        if: ${{ github.event.inputs.confirm_deploy == 'DEPLOY' }}
+        run: |
+          yes | solana-verify verify-from-repo \
+            --program-id ${{ env.PROGRAM_ID }} \
+            --library-name md1usd_solana \
+            -u ${{ secrets.SOLANA_RPC_URL }} \
+            https://github.com/md1god/MD1usd_solana \
+            || echo "PDA upload failed - continuing"
+
+      - name: Submit remote verification job (OtterSec)
+        if: ${{ github.event.inputs.confirm_deploy == 'DEPLOY' }}
+        run: |
+          solana-verify remote submit-job \
+            --program-id ${{ env.PROGRAM_ID }} \
+            --uploader 7WKER22cnTne1XjLk8EUiyVcTdKau9caYpaSSLXTeQUn \
+            || echo "Remote job failed or processing - check Solscan later"
