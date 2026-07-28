@@ -53,7 +53,7 @@ jobs:
         run: |
           cargo install anchor-cli --version 0.30.1 --locked || true
 
-      - name: Update dependencies to fix ahash compatibility with modern Rust
+      - name: Update dependencies to fix ahash compatibility
         run: |
           cargo update -p ahash || cargo update
 
@@ -71,7 +71,7 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add Cargo.lock Cargo.toml target/idl/ md1usd_solana.json 2>/dev/null || true
           if ! git diff --cached --quiet; then
-            git commit -m "chore: sync IDL and build files with ahash fix [skip ci]"
+            git commit -m "chore: sync IDL and build files [skip ci]"
             git push origin HEAD:${{ github.ref_name }}
           else
             echo "No changes to commit"
@@ -79,7 +79,7 @@ jobs:
 
       - name: Build Verifiable Program inside Docker
         run: |
-          solana-verify build --library-name md1usd_solana || true
+          solana-verify build --library-name md1usd_solana --solana-version 1.18.26
 
       - name: Setup verify authority keypair
         run: |
@@ -101,6 +101,7 @@ jobs:
           yes | solana-verify verify-from-repo \
             --program-id ${{ env.PROGRAM_ID }} \
             --library-name md1usd_solana \
+            --solana-version 1.18.26 \
             -u ${{ secrets.SOLANA_RPC_URL }} \
             https://github.com/md1god/MD1usd_solana \
             || echo "PDA upload failed - continuing"
@@ -110,4 +111,5 @@ jobs:
           solana-verify remote submit-job \
             --program-id ${{ env.PROGRAM_ID }} \
             --uploader 7WKER22cnTne1XjLk8EUiyVcTdKau9caYpaSSLXTeQUn \
+            --solana-version 1.18.26 \
             || echo "Remote job failed or processing - check Solscan later"
