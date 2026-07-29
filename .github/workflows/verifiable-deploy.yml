@@ -10,8 +10,8 @@ on:
 
 env:
   LIBRARY_NAME: md1usd_solana
-  ANCHOR_VERSION: 0.30.1 # تم تعديل الإصدار ليطابق مشروعك تماماً وتجنب التعارض
-  SOLANA_VERSION: 1.18.18 # الإصدار المتوافق تماماً مع Anchor 0.30.1
+  ANCHOR_VERSION: 0.30.1
+  SOLANA_VERSION: 1.18.18
   SOLANA_RPC_URL: https://api.mainnet-beta.solana.com
   RUSTFLAGS: "-D warnings"
 
@@ -55,7 +55,8 @@ jobs:
       - name: Install and Validate Pinned Solana CLI
         run: |
           set -eo pipefail
-          sh -c "$(curl -sSfL https://release.solana.com/v${{ env.SOLANA_VERSION }}/install)"
+          # إضافة آلية إعادة المحاولة لتجاوز أخطاء الشبكة والاتصال المؤقتة
+          sh -c "$(curl -sSfL --retry 5 --retry-delay 3 https://release.solana.com/v${{ env.SOLANA_VERSION }}/install)"
           SOLANA_BIN="$HOME/.local/share/solana/install/active_release/bin"
           echo "$SOLANA_BIN" >> $GITHUB_PATH
           
