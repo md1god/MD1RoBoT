@@ -66,14 +66,15 @@ jobs:
       - name: Install and Validate AVM & Pinned Anchor CLI
         run: |
           set -eo pipefail
-          AVM_BIN="$HOME/.avm/bin/avm"
+          # تصحيح مسار أداة avm لتكون في مسار تثبيت cargo الصحيح
+          AVM_BIN="$HOME/.cargo/bin/avm"
           
           if [ ! -f "$AVM_BIN" ]; then
             echo "AVM binary not found, installing via cargo..."
             cargo install avm --git https://github.com/solana-foundation/anchor --tag v${{ env.ANCHOR_VERSION }} --locked
           fi
           
-          echo "$HOME/.avm/bin" >> $GITHUB_PATH
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
           
           if ! "$AVM_BIN" list 2>/dev/null | grep -q "${{ env.ANCHOR_VERSION }}"; then
             echo "Anchor version ${{ env.ANCHOR_VERSION }} not found in avm, installing..."
