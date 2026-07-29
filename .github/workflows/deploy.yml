@@ -12,7 +12,7 @@ env:
   LIBRARY_NAME: md1usd
   ANCHOR_VERSION: 0.31.0
   SOLANA_VERSION: 2.1.0
-  RUST_VERSION: 1.85.0
+  RUST_VERSION: 1.90.0
   SOLANA_RPC_URL: ${{ secrets.SOLANA_RPC_URL }}
   RUSTFLAGS: "-D warnings"
 
@@ -110,12 +110,6 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Download Build Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: verifiable-program-artifacts
-          path: target/deploy/
-
-      - name: Download Build Artifacts (Action)
         uses: actions/download-artifact@v4
         with:
           name: verifiable-program-artifacts
