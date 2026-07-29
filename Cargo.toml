@@ -5,5 +5,5 @@ members = [
 resolver = "2"
 
 [workspace.metadata.cli]
-solana_version = "2.1.0"
-anchor_version = "0.31.0"
+solana-version = "2.1.0"
+anchor-version = "0.31.0"
