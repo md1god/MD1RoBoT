@@ -1,20 +1,9 @@
-[package]
-name = "md1usd"
-version = "0.1.0"
-description = "MD1usd Stablecoin Collateralized by USDT on Solana"
-edition = "2021"
+[workspace]
+members = [
+    "programs/md1usd"
+]
+resolver = "2"
 
-[lib]
-crate-type = ["cdylib", "lib"]
-name = "md1usd"
-
-[features]
-no-entrypoint = []
-no-idl = []
-no-log-ix-name = []
-cpi = ["no-entrypoint"]
-default = []
-
-[dependencies]
-anchor-lang = "0.31.0"
-anchor-spl = "0.31.0"
+[workspace.metadata.cli]
+solana_version = "2.1.0"
+anchor_version = "0.31.0"
