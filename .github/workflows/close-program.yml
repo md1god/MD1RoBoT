@@ -1,0 +1,30 @@
+name: Close Solana Program and Recover Rent
+on:
+  workflow_dispatch:
+
+env:
+  PROGRAM_ID: 3fN2LAt47q3oSgNq4dJZt4DuAh5yJw6mb6B3dRYJGHa8
+
+jobs:
+  close-program:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Solana CLI
+        run: |
+          sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
+
+      - name: Setup Wallet Keypair
+        run: |
+          echo '${{ secrets.SOLANA_WALLET_SECRET }}' > id.json
+          echo "Wallet Address loaded:"
+          solana-keygen pubkey id.json
+
+      - name: Close Program and Reclaim SOL
+        run: |
+          echo "Closing program ${{ env.PROGRAM_ID }} and sending rent back to wallet..."
+          solana program close ${{ env.PROGRAM_ID }} --keypair id.json --url https://api.mainnet-beta.solana.com --bypass-warning
+          echo "Program closed successfully and SOL recovered!"
