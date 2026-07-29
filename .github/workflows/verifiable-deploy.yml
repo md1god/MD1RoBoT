@@ -1,7 +1,12 @@
-name: Production Verifiable Build & Deploy (Mainnet - Final Fix)
+name: Production Verifiable Build, Deploy and Verify (Mainnet - Fixed 2-Stage)
 
 on:
   workflow_dispatch:
+    inputs:
+      uploader_pubkey:
+        description: 'عنوان محفظة الـ Uploader لـ OtterSec'
+        required: false
+        default: '7WKER22cnTne1XjLk8EUiyVcTdKau9caYpaSSLXTeQUn'
 
 permissions:
   contents: read
@@ -16,8 +21,11 @@ env:
   RUSTFLAGS: "-D warnings"
 
 jobs:
-  build-and-deploy:
-    name: Build, Verify & Deploy to Mainnet
+  # ==========================================
+  # المرحلة الأولى: البناء المعزول وحساب الهاش
+  # ==========================================
+  build:
+    name: 1. Verifiable Build & Audit
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -32,7 +40,7 @@ jobs:
           sudo apt-get install -y pkg-config build-essential libssl-dev libudev-dev libclang-dev protobuf-compiler grep coreutils
           sudo systemctl start docker
 
-      - name: Install Rust Toolchain
+      - name: Install Pinned Rust Toolchain
         uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: ${{ env.RUST_VERSION }}
@@ -63,13 +71,8 @@ jobs:
           export PATH="$HOME/.avm/bin:$HOME/.local/share/solana/install/active_release/bin:$HOME/.cargo/bin:$PATH"
           anchor clean
           anchor build --verifiable -d solanafoundation/anchor:v${{ env.ANCHOR_VERSION }}
-          
-          if [ ! -d "target/deploy" ]; then
-            echo "Error: target/deploy directory was not created!"
-            exit 1
-          fi
 
-      - name: Compute Clean Local Hash
+      - name: Compute Clean Hash & Prepare Artifacts
         run: |
           set -eo pipefail
           export PATH="$HOME/.cargo/bin:$PATH"
@@ -81,24 +84,67 @@ jobs:
           fi
           
           if [ -z "$FILE" ] || [ ! -f "$FILE" ]; then
-            echo "Error: Compiled .so binary file not found!"
+            echo "Error: Compiled .so file not found!"
             exit 1
           fi
           
-          echo "Binary File Found: $FILE"
           sha256sum "$FILE"
-          
           RAW_HASH=$(solana-verify get-program-hash "$FILE")
           echo "$RAW_HASH" | grep -oE '[a-fA-F0-9]{64}' | head -n 1 | tr -d '\r\n' > audit-report/local_hash.txt
           echo "Computed Local Hash: [$(cat audit-report/local_hash.txt)]"
 
-      - name: Setup Deployment Wallet
+      - name: Upload Build Artifacts to Job 2
+        uses: actions/upload-artifact@v4
+        with:
+          name: verifiable-program-artifacts
+          path: |
+            target/deploy/*.so
+            target/deploy/*-keypair.json
+            audit-report/
+
+  # ==========================================
+  # المرحلة الثانية: النشر والتحقق على Mainnet
+  # ==========================================
+  deploy:
+    name: 2. Mainnet Deploy & Strict Verification
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download Build Artifacts from Job 1
+        uses: actions/download-artifact@v4
+        with:
+          name: verifiable-program-artifacts
+          path: artifacts/
+
+      - name: Re-organize Artifact Paths
+        run: |
+          mkdir -p target/deploy audit-report
+          cp artifacts/*.so target/deploy/ 2>/dev/null || true
+          cp artifacts/*-keypair.json target/deploy/ 2>/dev/null || true
+          cp artifacts/audit-report/local_hash.txt audit-report/ 2>/dev/null || cp artifacts/local_hash.txt audit-report/ 2>/dev/null || true
+
+      - name: Install Solana CLI & solana-verify for Deployment
+        run: |
+          set -eo pipefail
+          SOLANA_INSTALL_DIR="$HOME/.local/share/solana/install/active_release"
+          SOLANA_BIN="$SOLANA_INSTALL_DIR/bin"
+          curl -L --retry 5 --retry-delay 3 "https://release.anza.xyz/v${{ env.SOLANA_VERSION }}/install" | sh
+          echo "$SOLANA_BIN" >> $GITHUB_PATH
+          
+          cargo install solana-verify --version ${{ env.SOLANA_VERIFY_VERSION }} --locked
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Setup Wallet Keypair
         run: |
           set -eo pipefail
           install -m 600 /dev/null id.json
           printf '%s\n' '${{ secrets.VERIFY_AUTHORITY_KEYPAIR }}' > id.json
 
-      - name: Check Wallet Balance
+      - name: Check Wallet Balance Safely
         run: |
           set -eo pipefail
           export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
@@ -149,6 +195,16 @@ jobs:
           
           echo "Verification Success! Local build matches On-chain bytecode 100%!"
           solana program show "$PROG_ID" --url "$RPC_URL"
+          echo "PROG_ID=$PROG_ID" >> $GITHUB_ENV
+
+      - name: Submit Remote Verification Job (OtterSec)
+        run: |
+          set -eo pipefail
+          export PATH="$HOME/.cargo/bin:$PATH"
+          solana-verify remote submit-job \
+            --program-id "$PROG_ID" \
+            --uploader "${{ github.event.inputs.uploader_pubkey || '7WKER22cnTne1XjLk8EUiyVcTdKau9caYpaSSLXTeQUn' }}" \
+            || echo "Remote job submission attempted."
 
       - name: Securely Shred Sensitive Keypair Files
         if: always()
