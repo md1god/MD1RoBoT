@@ -40,7 +40,7 @@ jobs:
             ~/.cargo/git
             ~/.cargo/bin
             ~/.local/share/solana
-          key: ${{ runner.os }}-rust-${{ env.RUST_VERSION }}-anchor-${{ env.ANCHOR_VERSION }}-solana-${{ env.SOLANA_VERSION }}-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-rust-${{ env.RUST_VERSION }}-anchor-${{ env.ANCHOR_VERSION }}-solana-${{ env.SOLANA_VERSION }}-${{ hashFiles('**/Cargo.toml') }}
 
       - name: Install Modern Solana CLI (Agave)
         run: |
@@ -61,6 +61,14 @@ jobs:
             cargo install solana-verify --locked
           fi
           echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Ensure Cargo.lock exists for deterministic builds
+        run: |
+          set -eo pipefail
+          if [ ! -f "Cargo.lock" ]; then
+            echo "Cargo.lock is missing. Generating it automatically..."
+            cargo generate-lockfile
+          fi
 
       - name: Deterministic Build via Docker Container
         run: |
@@ -113,7 +121,7 @@ jobs:
           path: |
             ~/.cargo/bin
             ~/.local/share/solana
-          key: ${{ runner.os }}-rust-${{ env.RUST_VERSION }}-anchor-${{ env.ANCHOR_VERSION }}-solana-${{ env.SOLANA_VERSION }}-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-rust-${{ env.RUST_VERSION }}-anchor-${{ env.ANCHOR_VERSION }}-solana-${{ env.SOLANA_VERSION }}-${{ hashFiles('**/Cargo.toml') }}
 
       - name: Setup Environment Paths
         run: |
