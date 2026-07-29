@@ -90,14 +90,32 @@ jobs:
       - name: Update hashbrown to pull a compatible ahash automatically
         run: |
           set -eo pipefail
-          # التشخيص أثبت أن ahash ليست مستهدفة مباشرة: هي مقفولة عبر
-          # hashbrown v0.11.0 التي تطلب بالتحديد ahash = "^0.7.0"، ومحاولة
-          # تثبيت ahash على 0.8.6 مباشرة مستحيلة لأنها خارج هذا النطاق تماماً
-          # (error: failed to select a version for the requirement `ahash = "^0.7.0"`).
-          # الحزمة الأم borsh v0.10.3 تسمح بأي hashbrown ضمن ">=0.11, <0.14"،
-          # ونسخ hashbrown الأحدث في هذا النطاق تطلب ahash 0.8.x المتوافقة.
-          # بما أن رقم النسخة الدقيق غير مؤكد مسبقاً، نجرب المرشحات المعروفة
-          # من الأحدث للأقدم ونتوقف عند أول نسخة تنجح فعلياً مع الـ resolver.
+          echo "---- Current hashbrown entries in Cargo.lock ----"
+          grep -A 2 'name = "hashbrown"' Cargo.lock || echo "hashbrown not found in lockfile"
+
+          CURRENT=$(grep -A 1 'name = "hashbrown"' Cargo.lock | grep '^version' | head -n 1 | sed -E 's/version = "(.*)"/\1/')
+
+          if [ -z "$CURRENT" ]; then
+            echo "hashbrown not present in Cargo.lock - nothing to patch, continuing"
+            exit 0
+          fi
+
+          echo "Detected current hashbrown version: $CURRENT"
+
+          # لو النسخة الحالية أصلاً 0.12.x أو 0.13.x (يعني الباتش اتعمل قبل كده
+          # في تشغيلة سابقة وترحّل في الـ commit)، متعملش حاجة وكمل عادي
+          case "$CURRENT" in
+            0.12.*|0.13.*)
+              echo "hashbrown already patched to $CURRENT - skipping update"
+              exit 0
+              ;;
+          esac
+
+          if [ "$CURRENT" != "0.11.0" ]; then
+            echo "hashbrown version ($CURRENT) is not the known-broken 0.11.0 - skipping patch to avoid unexpected changes"
+            exit 0
+          fi
+
           UPDATED=""
           for CANDIDATE in 0.13.2 0.13.1 0.13.0 0.12.3 0.12.0; do
             echo "==> Trying hashbrown $CANDIDATE"
