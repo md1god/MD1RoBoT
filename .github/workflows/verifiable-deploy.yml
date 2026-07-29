@@ -2,20 +2,15 @@ name: Fully Automated Verifiable Build & Deploy (Mainnet)
 
 on:
   workflow_dispatch:
-    inputs:
-      uploader_pubkey:
-        description: 'عنوان محفظة الـ Uploader'
-        required: false
-        default: '7WKER22cnTne1XjLk8EUiyVcTdKau9caYpaSSLXTeQUn'
 
 permissions:
-  contents: write
+  contents: read
 
 env:
   LIBRARY_NAME: md1usd_solana
   ANCHOR_VERSION: 0.31.1
   SOLANA_VERSION: 2.1.0
-  SOLANA_VERIFY_TAG: "v0.3.3"
+  RUST_VERSION: 1.81.0
   SOLANA_RPC_URL: ${{ secrets.MAINNET_RPC }}
   RUSTFLAGS: "-D warnings"
 
@@ -31,11 +26,17 @@ jobs:
           submodules: recursive
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Install system dependencies & Docker
+      - name: Install System Dependencies & Docker
         run: |
           sudo apt-get update
-          sudo apt-get install -y pkg-config build-essential libssl-dev libudev-dev libclang-dev protobuf-compiler
+          sudo apt-get install -y pkg-config build-essential libssl-dev libudev-dev libclang-dev protobuf-compiler grep coreutils
           sudo systemctl start docker
+
+      - name: Pin Explicit Rust Toolchain
+        uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          components: rustfmt, clippy
 
       - name: Install Node.js & Anchor CLI
         run: |
@@ -50,16 +51,16 @@ jobs:
           curl -L --retry 5 --retry-delay 3 "https://release.anza.xyz/v${{ env.SOLANA_VERSION }}/install" | sh
           echo "$SOLANA_BIN" >> $GITHUB_PATH
           
-          cargo install solana-verify --git https://github.com/Ellipsis-Labs/solana-verifiable-build --tag ${{ env.SOLANA_VERIFY_TAG }} --locked
+          cargo install solana-verify --locked
           echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
-      - name: Build verifiable program automatically
+      - name: Build Verifiable Program inside Docker
         run: |
           set -eo pipefail
           anchor clean
           anchor build --verifiable -d solanafoundation/anchor:v${{ env.ANCHOR_VERSION }}
 
-      - name: Compute local verifiable hash
+      - name: Compute Clean Local Verifiable Hash
         run: |
           set -eo pipefail
           FILE="target/deploy/${{ env.LIBRARY_NAME }}.so"
@@ -67,13 +68,17 @@ jobs:
             FILE=$(find target/deploy -name "*.so" | head -n 1)
           fi
           sha256sum "$FILE"
-          solana-verify get-program-hash "$FILE" > local_hash.txt
+          
+          # استخراج هاش SHA-256 مكون من 64 حرفاً هكس بدقة مطلقة
+          RAW_HASH=$(solana-verify get-program-hash "$FILE")
+          echo "$RAW_HASH" | grep -oE '[a-fA-F0-9]{64}' | head -n 1 | tr -d '\r\n' > local_hash.txt
+          echo "Computed Local Hash: [$(cat local_hash.txt)]"
 
       - name: Setup Deployment Wallet
         run: |
           set -eo pipefail
           install -m 600 /dev/null id.json
-          printf '%s' '${{ secrets.VERIFY_AUTHORITY_KEYPAIR }}' > id.json
+          printf '%s\n' '${{ secrets.VERIFY_AUTHORITY_KEYPAIR }}' > id.json
 
       - name: Deploy and Verify on Mainnet
         run: |
@@ -84,22 +89,34 @@ jobs:
           
           RPC_URL="${SOLANA_RPC_URL:-https://api.mainnet-beta.solana.com}"
           
+          echo "Deploying Program ID: $PROG_ID to Mainnet..."
           solana program deploy "$SO_FILE" \
             --program-id "$KEYPAIR_JSON" \
             --keypair id.json \
             --url "$RPC_URL"
             
-          LOCAL_HASH=$(cat local_hash.txt)
-          ONCHAIN_HASH=$(solana-verify get-program-hash --program-id "$PROG_ID" --url "$RPC_URL")
+          LOCAL_HASH=$(cat local_hash.txt | tr -d '\r\n')
+          ONCHAIN_RAW=$(solana-verify get-program-hash --program-id "$PROG_ID" --url "$RPC_URL")
+          ONCHAIN_HASH=$(echo "$ONCHAIN_RAW" | grep -oE '[a-fA-F0-9]{64}' | head -n 1 | tr -d '\r\n')
+          
+          echo "=========================================="
+          echo "Local Hash:    [$LOCAL_HASH]"
+          echo "On-Chain Hash: [$ONCHAIN_HASH]"
+          echo "=========================================="
           
           if [ "$ONCHAIN_HASH" != "$LOCAL_HASH" ]; then
-            echo "Error: Hash mismatch! Local: $LOCAL_HASH vs Onchain: $ONCHAIN_HASH"
+            echo "Error: Hash Mismatch Detected!"
             exit 1
           fi
           
-          echo "Deployment and verification successful!"
+          echo "Verification Success: On-chain bytecode matches verifiable docker build!"
+          
+          echo "--- On-Chain Program Details ---"
+          solana program show "$PROG_ID" --url "$RPC_URL"
 
-      - name: Cleanup sensitive files
+      - name: Securely Shred Sensitive Keypair Files
         if: always()
         run: |
-          rm -f id.json
+          if [ -f id.json ]; then
+            shred -u id.json
+          fi
