@@ -1,82 +1,66 @@
-name: Strict Verifiable Build and Deploy
+name: Build, Verify and Deploy (New Program)
 
 on:
   workflow_dispatch:
 
 env:
-  PROGRAM_ID: 3fN2LAt47q3oSgNq4dJZt4DuAh5yJw6mb6B3dRYJGHa8
+  LIBRARY_NAME: md1usd_solana
+  ANCHOR_VERSION: 0.31.1
+  SOLANA_VERSION: 2.1.0
 
 jobs:
-  verify-and-deploy:
+  build-verify-deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Rust Toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          override: true
-
-      - name: Install Solana CLI
+      - name: Install pinned Solana CLI (Agave)
         run: |
-          sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
+          sh -c "$(curl -sSfL https://release.anza.xyz/v${{ env.SOLANA_VERSION }}/install)"
           echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
 
-      - name: Detect and Install Matching Anchor CLI from Project
+      - name: Install AVM
         run: |
-          # استخراج إصدار الأنكور المطلوب مباشرة من ملف Anchor.toml في مشروعك لضمان عدم حدوث أي تضارب
-          if [ -f "Anchor.toml" ]; then
-            ANCHOR_VERSION=$(grep -i "anchor_version" Anchor.toml | awk -F'"' '{print $2}')
-            if [ -z "$ANCHOR_VERSION" ]; then
-              ANCHOR_VERSION="0.30.1" # القيمة الاحتياطية إذا لم تُكتب صراحة
-            fi
-          else
-            ANCHOR_VERSION="0.30.1"
-          fi
-          echo "Detected Anchor Version from project: $ANCHOR_VERSION"
-          cargo install --git https://github.com/coral-xyz/anchor --tag v$ANCHOR_VERSION anchor-cli --locked
+          cargo install avm --git https://github.com/solana-foundation/anchor --tag v${{ env.ANCHOR_VERSION }} --locked --force
+          echo "$HOME/.avm/bin" >> $GITHUB_PATH
 
-      - name: Setup Wallet Keypair
+      - name: Install pinned Anchor CLI via AVM
+        run: |
+          avm install ${{ env.ANCHOR_VERSION }}
+          avm use ${{ env.ANCHOR_VERSION }}
+          anchor --version
+
+      - name: Setup Wallet Keypair (new program, fresh address)
         run: |
           echo '${{ secrets.VERIFY_AUTHORITY_KEYPAIR }}' > id.json
           solana-keygen pubkey id.json
 
-      - name: Run Docker-based Verifiable Build
+      - name: Build verifiable program (Docker handled internally by Anchor)
         run: |
-          echo "Installing solana-verify tool..."
-          cargo install solana-verify --locked
-          
-          echo "Executing verifiable build via Docker container to match exact hash..."
-          solana-verify build --url https://api.mainnet-beta.solana.com
+          anchor build --verifiable
 
-      - name: Verify IDL Existence & Save Artifact
+      - name: Show local executable hash
         run: |
-          echo "Locating and verifying IDL files..."
-          mkdir -p ./idl_output
-          if [ -d "target/idl" ]; then
-            cp -r target/idl/*.json ./idl_output/
-          else
-            find target -name "*.json" -exec cp {} ./idl_output/ \;
-          fi
+          FILE=$(find target/deploy -name "*.so" | head -n 1)
+          echo "SO_FILE=$FILE" >> $GITHUB_ENV
+          echo "Using file: $FILE"
+          sha256sum "$FILE"
 
-      - name: Upload IDL Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: program-idl-verified
-          path: ./idl_output/*.json
-
-      - name: Secure Deploy Verified Program
+      - name: Deploy new program (fresh address, generated automatically)
         run: |
-          echo "Build and verification successful. Deploying verified binary to Solana..."
-          
-          # تحديد مسار الملف الموثق الناتج بدقة
-          VERIFIED_SO="target/verifiable/program.so"
-          if [ ! -f "$VERIFIED_SO" ]; then
-            VERIFIED_SO=$(find target -name "*.so" | head -n 1)
-          fi
-          
-          echo "Using binary at: $VERIFIED_SO"
-          solana program deploy "$VERIFIED_SO" --keypair id.json --url https://api.mainnet-beta.solana.com
-          echo "Program deployed successfully with verified hash!"
+          solana program deploy "$SO_FILE" \
+            --keypair id.json \
+            --url https://api.mainnet-beta.solana.com
+
+      - name: Show deployed program address
+        run: |
+          KEYPAIR_JSON=$(find target/deploy -name "*-keypair.json" | head -n 1)
+          echo "PROGRAM_ID=$(solana-keygen pubkey "$KEYPAIR_JSON")" >> $GITHUB_ENV
+          echo "New Program ID: $(solana-keygen pubkey "$KEYPAIR_JSON")"
+
+      - name: Verify against repo
+        run: |
+          yes | anchor verify "$PROGRAM_ID" \
+            --provider.cluster mainnet
