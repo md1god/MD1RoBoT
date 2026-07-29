@@ -1,12 +1,9 @@
-name: Production Verifiable Build, Deploy and Verify (Mainnet)
+name: Production Verifiable Build, Deploy & Verify (Mainnet)
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [main, master]
   workflow_dispatch:
-
-permissions:
-  contents: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -32,7 +29,7 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Install Pinned Rust Toolchain
+      - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: ${{ env.RUST_VERSION }}
@@ -81,105 +78,31 @@ jobs:
             cargo generate-lockfile
           fi
 
-      - name: Show what requires ahash (diagnostic)
+      - name: Update all dependencies to latest semver-compatible versions
         run: |
           set -eo pipefail
-          echo "---- Packages that depend on ahash ----"
-          cargo tree -i ahash --all-features || echo "cargo tree failed or ahash not in graph"
-
-      - name: Update hashbrown to pull a compatible ahash automatically
-        run: |
-          set -eo pipefail
-          echo "---- Current hashbrown entries in Cargo.lock ----"
-          grep -A 2 'name = "hashbrown"' Cargo.lock || echo "hashbrown not found in lockfile"
-
-          CURRENT=$(grep -A 1 'name = "hashbrown"' Cargo.lock | grep '^version' | head -n 1 | sed -E 's/version = "(.*)"/\1/')
-
-          if [ -z "$CURRENT" ]; then
-            echo "hashbrown not present in Cargo.lock - nothing to patch, continuing"
-            exit 0
-          fi
-
-          echo "Detected current hashbrown version: $CURRENT"
-
-          # لو النسخة الحالية أصلاً 0.12.x أو 0.13.x (يعني الباتش اتعمل قبل كده
-          # في تشغيلة سابقة وترحّل في الـ commit)، متعملش حاجة وكمل عادي
-          case "$CURRENT" in
-            0.12.*|0.13.*)
-              echo "hashbrown already patched to $CURRENT - skipping update"
-              exit 0
-              ;;
-          esac
-
-          if [ "$CURRENT" != "0.11.0" ]; then
-            echo "hashbrown version ($CURRENT) is not the known-broken 0.11.0 - skipping patch to avoid unexpected changes"
-            exit 0
-          fi
-
-          UPDATED=""
-          for CANDIDATE in 0.13.2 0.13.1 0.13.0 0.12.3 0.12.0; do
-            echo "==> Trying hashbrown $CANDIDATE"
-            if cargo update -p hashbrown@0.11.0 --precise "$CANDIDATE" 2>&1 | tee /tmp/hb_update.log; then
-              if ! grep -q "^error" /tmp/hb_update.log; then
-                UPDATED="$CANDIDATE"
-                break
-              fi
-            fi
-          done
-          if [ -z "$UPDATED" ]; then
-            echo "Error: no candidate hashbrown version succeeded within borsh's allowed range (>=0.11, <0.14)"
-            exit 1
-          fi
-          echo "---- hashbrown updated to $UPDATED ----"
-          echo "---- Cargo.lock hashbrown entries after update ----"
-          grep -A 2 'name = "hashbrown"' Cargo.lock
-          echo "---- Cargo.lock ahash entries after update ----"
-          grep -A 2 'name = "ahash"' Cargo.lock || echo "ahash not found in lockfile"
-
-      - name: Update anyhow to a version compatible with modern Rust
-        run: |
-          set -eo pipefail
-          echo "---- Current anyhow entries in Cargo.lock ----"
-          grep -A 2 'name = "anyhow"' Cargo.lock || echo "anyhow not found in lockfile"
-
-          CURRENT=$(grep -A 1 'name = "anyhow"' Cargo.lock | grep '^version' | head -n 1 | sed -E 's/version = "(.*)"/\1/')
-
-          if [ -z "$CURRENT" ]; then
-            echo "anyhow not present in Cargo.lock - nothing to patch, continuing"
-            exit 0
-          fi
-
-          echo "Detected current anyhow version: $CURRENT"
-
-          # النسخ القديمة من anyhow (قبل 1.0.60 تقريباً) بتعتمد على شكل قديم
-          # من backtrace API في trait std::error::Error، وده بيفشل مع أي
-          # Rust toolchain حديث (زي 1.84.1 جوه حاوية solana-verify).
-          # نقارن رقم الـ patch version؛ لو أقل من 60 نعمل باتش لإصدار حديث.
-          MAJOR=$(echo "$CURRENT" | cut -d. -f1)
-          MINOR=$(echo "$CURRENT" | cut -d. -f2)
-          PATCH=$(echo "$CURRENT" | cut -d. -f3)
-
-          NEEDS_PATCH=0
-          if [ "$MAJOR" = "1" ] && [ "$MINOR" = "0" ] && [ "$PATCH" -lt 60 ] 2>/dev/null; then
-            NEEDS_PATCH=1
-          fi
-
-          if [ "$NEEDS_PATCH" = "1" ]; then
-            echo "anyhow $CURRENT predates the backtrace API fix - patching to a modern release"
-            cargo update -p anyhow --precise 1.0.95
+          echo "---- Attempting a full cargo update within existing semver ranges ----"
+          if cargo update 2>&1 | tee /tmp/full_update.log; then
+            echo "Full update succeeded"
           else
-            echo "anyhow version ($CURRENT) is already modern enough - skipping patch"
+            echo "Full update failed - falling back to targeted patches for known problem packages"
+            cat /tmp/full_update.log
+
+            for PKG in hashbrown anyhow syn proc-macro2 quote; do
+              echo "==> Attempting targeted update for $PKG"
+              cargo update -p "$PKG" 2>&1 | tee -a /tmp/full_update.log || echo "  (no update available or not applicable for $PKG)"
+            done
           fi
 
-          echo "---- Cargo.lock anyhow entries after update ----"
-          grep -A 2 'name = "anyhow"' Cargo.lock || echo "anyhow not found in lockfile"
+          echo "---- Cargo.lock key package versions after update ----"
+          for PKG in hashbrown ahash anyhow syn proc-macro2 quote; do
+            echo "-- $PKG --"
+            grep -A 2 "name = \"$PKG\"" Cargo.lock | head -20 || echo "  not found"
+          done
 
       - name: Fix Cargo.lock version for toolchain compatibility (v4 to v3)
         run: |
           set -eo pipefail
-          # يجب أن تكون هذه آخر خطوة تلمس Cargo.lock: cargo update أعلاه قد يعيد
-          # كتابة الحقل version إلى 4 تلقائياً عند تغيير الـ resolution، لذلك
-          # تحويل v4 إلى v3 يجب أن يحدث بعده مباشرة وليس قبله
           if [ -f "Cargo.lock" ]; then
             sed -i '0,/^version = /{s/^version = 4/version = 3/}' Cargo.lock
             head -5 Cargo.lock
@@ -200,7 +123,7 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add Cargo.toml Cargo.lock
           if ! git diff --cached --quiet; then
-            git commit -m "chore: sync verified build files and ahash patch [skip ci]"
+            git commit -m "chore: sync verified build files and dependency patches [skip ci]"
             git pull --rebase origin ${{ github.ref_name }}
             git push origin HEAD:${{ github.ref_name }}
           else
