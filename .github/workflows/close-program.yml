@@ -19,7 +19,7 @@ jobs:
 
       - name: Setup Wallet Keypair
         run: |
-          echo '${{ secrets.SOLANA_WALLET_SECRET }}' > id.json
+          echo '${{ secrets.VERIFY_AUTHORITY_KEYPAIR }}' > id.json
           echo "Wallet Address loaded:"
           solana-keygen pubkey id.json
 
