@@ -77,22 +77,23 @@ jobs:
             cargo generate-lockfile
           fi
 
-      - name: Patch ahash to fix stdsimd build error in verify container
+      - name: Show what requires ahash (diagnostic)
         run: |
           set -eo pipefail
-          # ahash يصل كـ transitive dependency، لذلك [patch.crates-io] في جذر
-          # الـ workspace هو الطريقة الصحيحة الوحيدة لتجاوزه على أي عمق في الشجرة
-          if ! grep -q '^\[patch.crates-io\]' Cargo.toml; then
-            printf '\n[patch.crates-io]\nahash = "=0.8.6"\n' >> Cargo.toml
-          elif ! grep -q '^ahash' Cargo.toml; then
-            sed -i '/^\[patch.crates-io\]/a ahash = "=0.8.6"' Cargo.toml
-          else
-            sed -i 's/^ahash.*/ahash = "=0.8.6"/' Cargo.toml
-          fi
-          echo "---- Root Cargo.toml after ahash patch ----"
-          cat Cargo.toml
+          echo "---- Packages that depend on ahash ----"
+          cargo tree -i ahash --all-features || echo "cargo tree failed or ahash not in graph"
 
-          cargo update -p ahash --precise 0.8.6 || cargo update
+      - name: Pin ahash to fix stdsimd build error in verify container
+        run: |
+          set -eo pipefail
+          # ahash يصل كـ transitive dependency من crates.io نفسها؛ [patch.crates-io]
+          # لا يصلح هنا لأن cargo يرفض أي patch يشاور على نفس المصدر (crates.io->crates.io).
+          # الأداة الصحيحة لتثبيت نسخة محددة من dependency غير مباشر من نفس المصدر
+          # هي `cargo update -p <package> --precise <version>` مباشرة على Cargo.lock.
+          # لا يوجد fallback صامت هنا عمداً: لو فشل هذا الأمر فالسبب الحقيقي (مثلاً
+          # أن الحزمة الأصلية تطلب ahash = "0.7" بالتحديد) يجب أن يظهر في السجل
+          # بدل إخفائه خلف "cargo update" عام قد لا يحل المشكلة أصلاً.
+          cargo update -p ahash --precise 0.8.6
           echo "---- Cargo.lock ahash entries after update ----"
           grep -A 2 'name = "ahash"' Cargo.lock || echo "ahash not found in lockfile"
 
