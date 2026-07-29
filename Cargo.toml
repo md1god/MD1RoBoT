@@ -1,14 +1,20 @@
-[workspace]
-members = [
-    "programs/*"
-]
-resolver = "2"
+[package]
+name = "md1usd"
+version = "0.1.0"
+description = "MD1usd Stablecoin Collateralized by USDT on Solana"
+edition = "2021"
 
-[workspace.lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(target_os, values("solana"))'] }
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "md1usd"
 
-[profile.release]
-overflow-checks = true
-lto = "fat"
-codegen-units = 1
-opt-level = "z"
+[features]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+cpi = ["no-entrypoint"]
+default = []
+
+[dependencies]
+anchor-lang = "=0.31.0"
+anchor-spl = "=0.31.0"
