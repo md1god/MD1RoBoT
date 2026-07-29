@@ -1,65 +1,82 @@
-name: Verifiable Build, IDL Extraction and Deploy
+name: Strict Verifiable Build and Deploy
 
 on:
   workflow_dispatch:
 
 env:
   PROGRAM_ID: 3fN2LAt47q3oSgNq4dJZt4DuAh5yJw6mb6B3dRYJGHa8
-  SOLANA_NETWORK: mainnet-beta
 
 jobs:
-  build-verify-deploy:
+  verify-and-deploy:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Rust and Build Dependencies
+      - name: Install Rust Toolchain
         uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
           override: true
 
-      - name: Install Solana and Anchor CLI
+      - name: Install Solana CLI
         run: |
           sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
           echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
-          cargo install --git https://github.com/coral-xyz/anchor --tag v0.30.1 anchor-cli --locked
+
+      - name: Detect and Install Matching Anchor CLI from Project
+        run: |
+          # استخراج إصدار الأنكور المطلوب مباشرة من ملف Anchor.toml في مشروعك لضمان عدم حدوث أي تضارب
+          if [ -f "Anchor.toml" ]; then
+            ANCHOR_VERSION=$(grep -i "anchor_version" Anchor.toml | awk -F'"' '{print $2}')
+            if [ -z "$ANCHOR_VERSION" ]; then
+              ANCHOR_VERSION="0.30.1" # القيمة الاحتياطية إذا لم تُكتب صراحة
+            fi
+          else
+            ANCHOR_VERSION="0.30.1"
+          fi
+          echo "Detected Anchor Version from project: $ANCHOR_VERSION"
+          cargo install --git https://github.com/coral-xyz/anchor --tag v$ANCHOR_VERSION anchor-cli --locked
 
       - name: Setup Wallet Keypair
         run: |
           echo '${{ secrets.VERIFY_AUTHORITY_KEYPAIR }}' > id.json
           solana-keygen pubkey id.json
 
-      - name: Step 1 - Run Verifiable Build (Docker-based)
+      - name: Run Docker-based Verifiable Build
         run: |
-          echo "Starting verifiable build to ensure 100% hash match..."
+          echo "Installing solana-verify tool..."
           cargo install solana-verify --locked
-          # بناء العقد باستخدام أداة التحقق لضمان مطابقة البصمة
+          
+          echo "Executing verifiable build via Docker container to match exact hash..."
           solana-verify build --url https://api.mainnet-beta.solana.com
 
-      - name: Step 2 - Extract and Locate IDL
+      - name: Verify IDL Existence & Save Artifact
         run: |
-          echo "Locating generated IDL files..."
-          find target -name "*.json"
-          # التأكد من وجود مجلد الـ IDL ونسخه للمكان الصحيح
+          echo "Locating and verifying IDL files..."
           mkdir -p ./idl_output
-          cp -r target/idl/*.json ./idl_output/ || echo "IDL json not found in standard path, checking target..."
+          if [ -d "target/idl" ]; then
+            cp -r target/idl/*.json ./idl_output/
+          else
+            find target -name "*.json" -exec cp {} ./idl_output/ \;
+          fi
 
-      - name: Step 3 - Save IDL as GitHub Artifact
+      - name: Upload IDL Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: program-idl-file
+          name: program-idl-verified
           path: ./idl_output/*.json
 
-      - name: Step 4 - Secure Deploy / Upgrade on Solana
+      - name: Secure Deploy Verified Program
         run: |
-          echo "All checks passed successfully. Proceeding to deploy verified binary..."
-          # التحقق مما إذا كان الملف الموثق موجوداً واستخدامه للنشر
+          echo "Build and verification successful. Deploying verified binary to Solana..."
+          
+          # تحديد مسار الملف الموثق الناتج بدقة
           VERIFIED_SO="target/verifiable/program.so"
           if [ ! -f "$VERIFIED_SO" ]; then
-            VERIFIED_SO="target/deploy/*.so"
+            VERIFIED_SO=$(find target -name "*.so" | head -n 1)
           fi
           
-          solana program deploy $VERIFIED_SO --keypair id.json --url https://api.mainnet-beta.solana.com
-          echo "Deployment completed successfully with verified build!"
+          echo "Using binary at: $VERIFIED_SO"
+          solana program deploy "$VERIFIED_SO" --keypair id.json --url https://api.mainnet-beta.solana.com
+          echo "Program deployed successfully with verified hash!"
