@@ -1,34 +1,40 @@
-FROM rust:1.96.1
-
-# تثبيت الحزم الأساسية المطلوبة للنظام
-RUN apt-get update && apt-get install -y \
-    curl \
-    build-essential \
-    libssl-dev \
-    pkg-config \
-    git \
-    libudev-dev \
-    llvm \
-    clang \
-    && rm -rf /var/lib/apt/lists/*
-
-# 1. تثبيت إصدار Solana CLI المطلوب
-RUN sh -c "$(curl -sSfL https://release.solana.com/v4.1.0-beta.3/install)"
-
-# ضبط مسار الـ PATH لضمان وصول النظام لجميع أدوات سولانا (بما فيها cargo-build-sbf)
-ENV PATH="/root/.local/share/solana/install/active_release/bin:/root/.cargo/bin:$PATH"
-
-# 2. تثبيت AVM لجلب نسخة anchor-cli 1.1.2 الجاهزة بدون الحاجة لبنائها من المصدر
-RUN cargo install --git https://github.com/coral-xyz/anchor avm --locked --force
-
-RUN avm install 1.1.2
-RUN avm use 1.1.2
-
-# إضافة مسار AVM إلى الـ PATH
-ENV PATH="/root/.avm/bin:$PATH"
+# Build stage
+FROM rust:1.89.0 as builder
 
 WORKDIR /app
-COPY . .
 
-# 3. تشغيل البناء مع استخدام --ignore-keys لتخطي خطأ اختلاف مفاتيح البرنامج
-RUN anchor build --ignore-keys
+# Install Anchor CLI and dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    pkg-config \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN cargo install anchor-cli --locked
+
+# Copy workspace manifests
+COPY Cargo.toml Cargo.lock rust-toolchain.toml Anchor.toml ./
+COPY programs ./programs
+
+# Build the project
+RUN cargo build --release
+
+# Runtime stage
+FROM debian:bookworm-slim
+
+WORKDIR /app
+
+# Install minimal runtime dependencies
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy build artifacts from builder
+COPY --from=builder /app/target/release /app/target/release
+COPY --from=builder /usr/local/cargo/bin/anchor /usr/local/bin/anchor
+COPY Anchor.toml ./
+COPY programs ./programs
+
+# Use anchor as the default entry point
+ENTRYPOINT ["anchor"]
+CMD ["--version"]
