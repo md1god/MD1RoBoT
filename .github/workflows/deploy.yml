@@ -202,7 +202,7 @@ jobs:
             --keypair id.json \
             --url "$SOLANA_RPC_URL"
 
-      - name: Confirm On-Chain Hash Verification
+      - name: Confirm On-Chain Hash Verification & Export Program ID
         run: |
           set -eo pipefail
           KEYPAIR_FILE=$(find target/deploy -name "*-keypair.json" | head -n 1)
@@ -221,6 +221,10 @@ jobs:
           fi
 
           echo "Hashes match perfectly!"
+
+          # تصدير الـ PROGRAM_ID الحقيقي المستخرج من الـ keypair عشان يبقى متاح
+          # للخطوات الجاية (env.PROGRAM_ID) بدل القيمة الوهمية في أعلى الملف
+          echo "PROGRAM_ID=$PROGRAM_ID" >> $GITHUB_ENV
 
       - name: Submit verification PDA on-chain
         run: |
