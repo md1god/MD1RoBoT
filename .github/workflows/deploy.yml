@@ -59,7 +59,7 @@ jobs:
             cargo install anchor-cli --version ${{ env.ANCHOR_VERSION }} --locked
           fi
           if ! command -v solana-verify &> /dev/null; then
-            cargo install solana-verify --git https://github.com/Ellipsis-Labs/solana-verifiable-build --tag ${{ env.SOLANA_VERIFY_TAG }} --locked
+            cargo install solana-verify --locked
           fi
           echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
