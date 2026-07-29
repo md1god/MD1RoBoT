@@ -1,4 +1,4 @@
-name: Production Verifiable Build, Deploy and Verify
+name: Production Verifiable Build, Deploy and Verify (Mainnet - Elite)
 
 on:
   workflow_dispatch:
@@ -8,22 +8,33 @@ on:
         required: false
         default: '7WKER22cnTne1XjLk8EUiyVcTdKau9caYpaSSLXTeQUn'
 
+permissions:
+  contents: read
+
 env:
   LIBRARY_NAME: md1usd_solana
-  ANCHOR_VERSION: 0.30.1
-  SOLANA_VERSION: 1.18.18
-  SOLANA_RPC_URL: https://api.mainnet-beta.solana.com
+  ANCHOR_VERSION: 0.31.1
+  SOLANA_VERSION: 2.1.0
+  RUST_VERSION: 1.90.0
+  SOLANA_VERIFY_TAG: "v0.3.3"
+  SOLANA_RPC_URL: ${{ secrets.MAINNET_RPC }}
   RUSTFLAGS: "-D warnings"
 
 jobs:
-  build-verify-deploy:
-    runs-on: ubuntu-latest
+  build:
+    name: 1. Verifiable Build & Audit
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           submodules: recursive
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config build-essential libssl-dev libudev-dev libclang-dev protobuf-compiler
 
       - name: Check Cargo.lock presence
         run: |
@@ -32,68 +43,77 @@ jobs:
             exit 1
           fi
 
-      - name: Install pinned Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Log Tool Versions for Diagnostics
+      - name: Ensure Docker is active and running
         run: |
-          rustc --version
-          cargo --version
+          sudo systemctl start docker
+          docker --version
+          docker info
 
-      - name: Cache Cargo & AVM
+      - name: Install Pinned Rust Toolchain
+        uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          components: rustfmt, clippy
+
+      - name: Generate Toolchain Audit Report
+        run: |
+          mkdir -p audit-report
+          {
+            echo "=== BUILD TOOLCHAIN REPORT ==="
+            echo "Date: $(date -u)"
+            echo "OS: Ubuntu 24.04 LTS"
+            echo "Rust Version: $(rustc --version)"
+            echo "Cargo Version: $(cargo --version)"
+            echo "Anchor Version: ${{ env.ANCHOR_VERSION }}"
+            echo "Solana CLI Version: ${{ env.SOLANA_VERSION }}"
+          } > audit-report/toolchain-report.txt
+          cat audit-report/toolchain-report.txt
+
+      - name: Cache Cargo, Anchor CLI & Solana CLI
         uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
             ~/.cargo/bin
-            ~/.avm
-          key: ${{ runner.os }}-cargo-avm-${{ env.ANCHOR_VERSION }}-${{ hashFiles('**/Cargo.lock') }}
+            ~/.local/share/solana
+          key: ${{ runner.os }}-rust-${{ env.RUST_VERSION }}-anchor-${{ env.ANCHOR_VERSION }}-solana-${{ env.SOLANA_VERSION }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-avm-${{ env.ANCHOR_VERSION }}-
+            ${{ runner.os }}-rust-${{ env.RUST_VERSION }}-anchor-${{ env.ANCHOR_VERSION }}-solana-${{ env.SOLANA_VERSION }}-
 
-      - name: Install Pinned Solana CLI securely from GitHub Releases
+      - name: Install Pinned Modern Solana CLI (Agave) securely
         run: |
           set -eo pipefail
-          echo "Downloading Solana CLI v${{ env.SOLANA_VERSION }} directly from GitHub to bypass SSL issues..."
-          curl -L --retry 5 --retry-delay 3 "https://github.com/solana-labs/solana/releases/download/v${{ env.SOLANA_VERSION }}/solana-release-x86_64-unknown-linux-gnu.tar.bz2" -o solana-release.tar.bz2
-          tar jxf solana-release.tar.bz2
-          
           SOLANA_INSTALL_DIR="$HOME/.local/share/solana/install/active_release"
-          mkdir -p "$SOLANA_INSTALL_DIR"
-          mv solana-release/* "$SOLANA_INSTALL_DIR/"
-          rm -rf solana-release solana-release.tar.bz2
-          
           SOLANA_BIN="$SOLANA_INSTALL_DIR/bin"
+          
+          if [ -x "$SOLANA_BIN/solana" ] && "$SOLANA_BIN/solana" --version \vert{} grep -q "${{ env.SOLANA_VERSION }}"; then
+            echo "Solana CLI v${{ env.SOLANA_VERSION }} is already cached."
+          else
+            echo "Downloading Solana CLI v${{ env.SOLANA_VERSION }}..."
+            curl -L --retry 5 --retry-delay 3 "https://release.anza.xyz/v${{ env.SOLANA_VERSION }}/install" | sh
+          fi
+          
           echo "$SOLANA_BIN" >> $GITHUB_PATH
-          
-          if ! "$SOLANA_BIN/solana" --version | grep -q "${{ env.SOLANA_VERSION }}"; then
-            echo "Error: Solana CLI version ${{ env.SOLANA_VERSION }} not matched in output!"
-            "$SOLANA_BIN/solana" --version
-            exit 1
-          fi
-          echo "Solana CLI version verified successfully: ${{ env.SOLANA_VERSION }}"
 
-      - name: Install and Validate AVM & Pinned Anchor CLI
+      - name: Install Pinned Anchor CLI directly (Deterministic)
         run: |
           set -eo pipefail
-          AVM_BIN="$HOME/.cargo/bin/avm"
-          
-          if [ ! -f "$AVM_BIN" ]; then
-            echo "AVM binary not found, installing via cargo..."
-            cargo install avm --git https://github.com/anchor-lang/anchor --tag v${{ env.ANCHOR_VERSION }}
+          if ! command -v anchor &> /dev/null || ! anchor --version | grep -q "${{ env.ANCHOR_VERSION }}"; then
+            echo "Installing Anchor CLI version ${{ env.ANCHOR_VERSION }} directly..."
+            cargo install anchor-cli --version ${{ env.ANCHOR_VERSION }} --locked --force
+          else
+            echo "Anchor CLI v${{ env.ANCHOR_VERSION }} already installed."
           fi
-          
           echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-          
-          echo "Installing Anchor version ${{ env.ANCHOR_VERSION }} via avm non-interactively..."
-          "$AVM_BIN" install ${{ env.ANCHOR_VERSION }}
-          "$AVM_BIN" use ${{ env.ANCHOR_VERSION }}
 
-      - name: Install solana-verify CLI
+      - name: Install Pinned solana-verify via Git Tag
         run: |
           set -eo pipefail
-          cargo install solana-verify
+          if ! command -v solana-verify &> /dev/null; then
+            echo "Installing solana-verify from tag ${{ env.SOLANA_VERIFY_TAG }}..."
+            cargo install solana-verify --git https://github.com/Ellipsis-Labs/solana-verifiable-build --tag ${{ env.SOLANA_VERIFY_TAG }} --locked
+          fi
           echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
       - name: Verify final tool versions
@@ -102,6 +122,78 @@ jobs:
           anchor --version
           solana --version
           solana-verify --version
+
+      - name: Clean previous build artifacts
+        run: |
+          set -eo pipefail
+          anchor clean
+
+      - name: Build verifiable program with pinned Docker image
+        run: |
+          set -eo pipefail
+          anchor build --verifiable -d solanafoundation/anchor:v${{ env.ANCHOR_VERSION }}
+
+      - name: Locate binary, compute local hash, and package artifacts
+        run: |
+          set -eo pipefail
+          FILE="target/deploy/${{ env.LIBRARY_NAME }}.so"
+          if [ ! -f "$FILE" ]; then
+            FILE=$(find target/deploy -name "*.so" | head -n 1)
+          fi
+          if [ -z "$FILE" ] \vert{}\vert{} [ ! -f "$FILE" ]; then
+            echo "Error: Compiled .so file not found!"
+            exit 1
+          fi
+          
+          sha256sum "$FILE"
+          LOCAL_PROGRAM_HASH=$(solana-verify get-program-hash "$FILE")
+          echo "Local Program Hash: $LOCAL_PROGRAM_HASH"
+          echo "$LOCAL_PROGRAM_HASH" > audit-report/local_hash.txt
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: verifiable-program-artifacts
+          path: |
+            target/deploy/*.so
+            target/deploy/*-keypair.json
+            audit-report/
+
+  deploy:
+    name: 2. Mainnet Deploy & Strict Verification
+    needs: build
+    runs-on: ubuntu-24.04
+    environment: production
+    timeout-minutes: 60
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config build-essential libssl-dev libudev-dev
+
+      - name: Download Build Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: verifiable-program-artifacts
+          path: target/deploy/
+
+      - name: Install Pinned Solana CLI (Agave) for deployment
+        run: |
+          set -eo pipefail
+          SOLANA_INSTALL_DIR="$HOME/.local/share/solana/install/active_release"
+          SOLANA_BIN="$SOLANA_INSTALL_DIR/bin"
+          curl -L --retry 5 --retry-delay 3 "https://release.anza.xyz/v${{ env.SOLANA_VERSION }}/install" | sh
+          echo "$SOLANA_BIN" >> $GITHUB_PATH
+
+      - name: Install Pinned Anchor CLI & solana-verify
+        run: |
+          set -eo pipefail
+          cargo install anchor-cli --version ${{ env.ANCHOR_VERSION }} --locked --force
+          cargo install solana-verify --git https://github.com/Ellipsis-Labs/solana-verifiable-build --tag ${{ env.SOLANA_VERIFY_TAG }} --locked
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
       - name: Setup Wallet Keypair
         run: |
@@ -114,7 +206,6 @@ jobs:
         run: |
           set -eo pipefail
           RAW_BALANCE=$(solana balance --keypair id.json --url "$SOLANA_RPC_URL" --lamports)
-          # استخراج الأرقام فقط لضمان عدم تأثر القراءة بأي تغيير في شكل نص المخرجات
           LAMPORTS=$(echo "$RAW_BALANCE" | grep -o '[0-9]*' | head -n 1)
           
           if [ -z "$LAMPORTS" ]; then
@@ -131,46 +222,27 @@ jobs:
             exit 1
           fi
 
-      - name: Clean previous build artifacts
-        run: |
-          set -eo pipefail
-          anchor clean
-
-      - name: Build verifiable program
-        run: |
-          set -eo pipefail
-          anchor build --verifiable
-
-      - name: Locate local executable binary
+      - name: Locate binary and local hash
         run: |
           set -eo pipefail
           FILE="target/deploy/${{ env.LIBRARY_NAME }}.so"
           if [ ! -f "$FILE" ]; then
             FILE=$(find target/deploy -name "*.so" | head -n 1)
           fi
-          if [ -z "$FILE" ] || [ ! -f "$FILE" ]; then
-            echo "Error: Compiled .so file not found!"
-            exit 1
-          fi
           echo "SO_FILE=$FILE" >> $GITHUB_ENV
-          echo "Using file: $FILE"
-          sha256sum "$FILE"
+          
+          LOCAL_PROGRAM_HASH=$(cat target/deploy/local_hash.txt)
+          echo "LOCAL_PROGRAM_HASH=$LOCAL_PROGRAM_HASH" >> $GITHUB_ENV
+          echo "Loaded Local Program Hash: $LOCAL_PROGRAM_HASH"
 
-      - name: Deploy new program
-        run: |
-          set -eo pipefail
-          solana program deploy "$SO_FILE" \
-            --keypair id.json \
-            --url "$SOLANA_RPC_URL"
-
-      - name: Extract Program ID Safely
+      - name: Extract Target Program ID Safely
         run: |
           set -eo pipefail
           KEYPAIR_JSON="target/deploy/${{ env.LIBRARY_NAME }}-keypair.json"
           if [ ! -f "$KEYPAIR_JSON" ]; then
             KEYPAIR_JSON=$(find target/deploy -name "*-keypair.json" | head -n 1)
           fi
-          if [ -z "$KEYPAIR_JSON" ] || [ ! -f "$KEYPAIR_JSON" ]; then
+          if [ -z "$KEYPAIR_JSON" ] \vert{}\vert{} [ ! -f "$KEYPAIR_JSON" ]; then
             echo "Error: Program keypair JSON file not found!"
             exit 1
           fi
@@ -178,15 +250,35 @@ jobs:
           echo "PROGRAM_ID=$PROG_ID" >> $GITHUB_ENV
           echo "Target Program ID: $PROG_ID"
 
-      - name: Confirm on-chain deployment
+      - name: Deploy new program with explicit Program ID
+        run: |
+          set -eo pipefail
+          solana program deploy "$SO_FILE" \
+            --program-id "target/deploy/${{ env.LIBRARY_NAME }}-keypair.json" \
+            --keypair id.json \
+            --url "$SOLANA_RPC_URL"
+
+      - name: Confirm on-chain deployment & Strict Hash Verification
         run: |
           set -eo pipefail
           solana program show "$PROGRAM_ID" --url "$SOLANA_RPC_URL"
-
-      - name: Verify against repo (Anchor Verify)
-        run: |
-          set -eo pipefail
-          anchor --provider.cluster mainnet verify -p ${{ env.LIBRARY_NAME }} "$PROGRAM_ID"
+          
+          echo "Fetching on-chain program hash..."
+          ONCHAIN_HASH=$(solana-verify get-program-hash --program-id "$PROGRAM_ID" --url "$SOLANA_RPC_URL")
+          echo "On-chain Program Hash: $ONCHAIN_HASH"
+          echo "Local Program Hash:    $LOCAL_PROGRAM_HASH"
+          
+          if [ -z "$ONCHAIN_HASH" ] || [ "$ONCHAIN_HASH" != "$LOCAL_PROGRAM_HASH" ]; then
+            echo "Error: On-chain hash does not match local build hash or RPC query failed!"
+            echo "Workflow stopped safely without destroying the program. Inspect logs."
+            exit 1
+          fi
+          
+          echo "Hashes match perfectly! Running Anchor verification..."
+          if ! anchor --provider.cluster mainnet verify -p ${{ env.LIBRARY_NAME }} "$PROGRAM_ID"; then
+            echo "Error: Anchor verification against cluster failed!"
+            exit 1
+          fi
 
       - name: Submit remote verification job to OtterSec
         run: |
