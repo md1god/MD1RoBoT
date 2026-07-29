@@ -52,12 +52,19 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-avm-${{ env.ANCHOR_VERSION }}-
 
-      - name: Install and Validate Pinned Solana CLI
+      - name: Install Pinned Solana CLI securely from GitHub Releases
         run: |
           set -eo pipefail
-          # إضافة آلية إعادة المحاولة لتجاوز أخطاء الشبكة والاتصال المؤقتة
-          sh -c "$(curl -sSfL --retry 5 --retry-delay 3 https://release.solana.com/v${{ env.SOLANA_VERSION }}/install)"
-          SOLANA_BIN="$HOME/.local/share/solana/install/active_release/bin"
+          echo "Downloading Solana CLI v${{ env.SOLANA_VERSION }} directly from GitHub to bypass SSL issues..."
+          curl -L --retry 5 --retry-delay 3 "https://github.com/solana-labs/solana/releases/download/v${{ env.SOLANA_VERSION }}/solana-release-x86_64-unknown-linux-gnu.tar.bz2" -o solana-release.tar.bz2
+          tar jxf solana-release.tar.bz2
+          
+          SOLANA_INSTALL_DIR="$HOME/.local/share/solana/install/active_release"
+          mkdir -p "$SOLANA_INSTALL_DIR"
+          mv solana-release/* "$SOLANA_INSTALL_DIR/"
+          rm -rf solana-release solana-release.tar.bz2
+          
+          SOLANA_BIN="$SOLANA_INSTALL_DIR/bin"
           echo "$SOLANA_BIN" >> $GITHUB_PATH
           
           if ! "$SOLANA_BIN/solana" --version | grep -q "${{ env.SOLANA_VERSION }}"; then
@@ -74,7 +81,7 @@ jobs:
           
           if [ ! -f "$AVM_BIN" ]; then
             echo "AVM binary not found, installing via cargo..."
-            cargo install avm --git https://github.com/solana-foundation/anchor --tag v${{ env.ANCHOR_VERSION }}
+            cargo install avm --git https://github.com/anchor-lang/anchor --tag v${{ env.ANCHOR_VERSION }}
           fi
           
           echo "$HOME/.cargo/bin" >> $GITHUB_PATH
@@ -103,12 +110,21 @@ jobs:
           printf '%s' '${{ secrets.VERIFY_AUTHORITY_KEYPAIR }}' > id.json
           solana-keygen pubkey id.json
 
-      - name: Check wallet balance before deploy
+      - name: Check wallet balance safely
         run: |
           set -eo pipefail
-          LAMPORTS=$(solana balance --keypair id.json --url "$SOLANA_RPC_URL" --lamports | awk '{print $1}')
-          SOL=$(echo "$LAMPORTS" | awk '{print $1 / 1000000000}')
+          RAW_BALANCE=$(solana balance --keypair id.json --url "$SOLANA_RPC_URL" --lamports)
+          # استخراج الأرقام فقط لضمان عدم تأثر القراءة بأي تغيير في شكل نص المخرجات
+          LAMPORTS=$(echo "$RAW_BALANCE" | grep -o '[0-9]*' | head -n 1)
+          
+          if [ -z "$LAMPORTS" ]; then
+            echo "Error: Could not parse wallet balance."
+            exit 1
+          fi
+          
+          SOL=$(awk "BEGIN {print $LAMPORTS / 1000000000}")
           echo "Wallet balance: $SOL SOL ($LAMPORTS lamports)"
+          
           MIN_LAMPORTS=1800000000
           if [ "$LAMPORTS" -lt "$MIN_LAMPORTS" ]; then
             echo "Error: Insufficient balance for deployment. Minimum required is 1.8 SOL."
