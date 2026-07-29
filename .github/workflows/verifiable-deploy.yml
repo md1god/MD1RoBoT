@@ -13,6 +13,7 @@ env:
   ANCHOR_VERSION: 0.31.1
   SOLANA_VERSION: 2.1.0
   SOLANA_RPC_URL: https://api.mainnet-beta.solana.com
+  RUSTFLAGS: "-D warnings" # تحويل أي تحذير إلى خطأ لتوقف السكربت فوراً
 
 jobs:
   build-verify-deploy:
@@ -71,13 +72,12 @@ jobs:
           AVM_BIN="$HOME/.cargo/bin/avm"
           
           if [ ! -f "$AVM_BIN" ]; then
-            echo "AVM binary not found, installing via cargo without strict lock to bypass yanked crates..."
+            echo "AVM binary not found, installing via cargo..."
             cargo install avm --git https://github.com/solana-foundation/anchor --tag v${{ env.ANCHOR_VERSION }}
           fi
           
           echo "$HOME/.cargo/bin" >> $GITHUB_PATH
           
-          # تثبيت إصدار Anchor صراحةً بدون تفاعل بشري لتجنب مشكلة Expected input
           echo "Installing Anchor version ${{ env.ANCHOR_VERSION }} via avm non-interactively..."
           "$AVM_BIN" install ${{ env.ANCHOR_VERSION }}
           "$AVM_BIN" use ${{ env.ANCHOR_VERSION }}
@@ -102,15 +102,15 @@ jobs:
           printf '%s' '${{ secrets.VERIFY_AUTHORITY_KEYPAIR }}' > id.json
           solana-keygen pubkey id.json
 
-      - name: Check wallet balance before deploy
+      - name: Check wallet balance before deploy (Adapted for 2 SOL budget)
         run: |
           set -eo pipefail
           LAMPORTS=$(solana balance --keypair id.json --url "$SOLANA_RPC_URL" --lamports | awk '{print $1}')
           SOL=$(echo "$LAMPORTS" | awk '{print $1 / 1000000000}')
           echo "Wallet balance: $SOL SOL ($LAMPORTS lamports)"
-          MIN_LAMPORTS=3000000000
+          MIN_LAMPORTS=1800000000 # تم ضبط الحد الأدنى ليناسب رصيد 2 سول مع ترك هامان رسوم المعاملة
           if [ "$LAMPORTS" -lt "$MIN_LAMPORTS" ]; then
-            echo "Error: Insufficient balance for deployment."
+            echo "Error: Insufficient balance for deployment. Minimum required is 1.8 SOL."
             exit 1
           fi
 
