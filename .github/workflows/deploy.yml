@@ -109,6 +109,22 @@ jobs:
             echo "No changes to commit - files already in sync"
           fi
 
+      - name: Pin ahash to fix known stdsimd build error in verify container
+        run: |
+          set -eo pipefail
+          MANIFEST="programs/${{ env.LIBRARY_NAME }}/Cargo.toml"
+          if [ ! -f "$MANIFEST" ]; then
+            echo "Error: $MANIFEST not found!"
+            exit 1
+          fi
+          if grep -q '^ahash' "$MANIFEST"; then
+            sed -i 's/^ahash.*/ahash = "=0.8.6"/' "$MANIFEST"
+          else
+            sed -i '/^\[dependencies\]/a ahash = "=0.8.6"' "$MANIFEST"
+          fi
+          echo "---- $MANIFEST after ahash pin ----"
+          cat "$MANIFEST"
+
       - name: Deterministic Build via Docker Container
         run: |
           set -eo pipefail
