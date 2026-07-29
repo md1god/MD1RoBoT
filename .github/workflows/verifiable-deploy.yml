@@ -11,7 +11,8 @@ env:
   ANCHOR_VERSION: 0.31.1
   SOLANA_VERSION: 2.1.0
   RUST_VERSION: 1.81.0
-  SOLANA_RPC_URL: ${{ secrets.MAINNET_RPC }}
+  SOLANA_VERIFY_VERSION: 0.4.11  # تثبيت أداة التحقق للحماية من التحديثات المفاجئة
+  SOLANA_RPC_URL: ${{ secrets.SOLANA_RPC_URL }}
   RUSTFLAGS: "-D warnings"
 
 jobs:
@@ -43,7 +44,7 @@ jobs:
           set -eo pipefail
           npm install -g @coral-xyz/anchor-cli@${{ env.ANCHOR_VERSION }}
 
-      - name: Install Pinned Solana CLI & solana-verify
+      - name: Install Pinned Solana CLI & Pinned solana-verify
         run: |
           set -eo pipefail
           SOLANA_INSTALL_DIR="$HOME/.local/share/solana/install/active_release"
@@ -51,7 +52,8 @@ jobs:
           curl -L --retry 5 --retry-delay 3 "https://release.anza.xyz/v${{ env.SOLANA_VERSION }}/install" | sh
           echo "$SOLANA_BIN" >> $GITHUB_PATH
           
-          cargo install solana-verify --locked
+          # تثبيت solana-verify برقم إصدار ثابت لضمان مطابقة الهاش الأمنية
+          cargo install solana-verify --version ${{ env.SOLANA_VERIFY_VERSION }} --locked
           echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
       - name: Build Verifiable Program inside Docker
@@ -69,7 +71,109 @@ jobs:
           fi
           sha256sum "$FILE"
           
-          # استخراج هاش SHA-256 مكون من 64 حرفاً هكس بدقة مطلقة
+          RAW_HASH=$(solana-verify get-program-hash "$FILE")
+          echo "$RAW_HASH" | grep -oE '[a-fA-F0-9]{64}' | head -n 1 | tr -d '\r\n' > local_hash.txt
+          echo "Computed Local Hash: [$(cat local_hash.txt)]"
+
+      - name: Setup Deployment Wallet
+        run: |
+          set -eo pipefail
+          install -m 600 /dev/null id.json
+          printf '%s\n' '${{ secrets.VERIFY_AUTHORITY_KEYPAIR }}' > id.json
+
+      - name: Deploy and Verify on Mainnet
+        run: |
+          set -eo pipefail
+          KEYPAIR_JSON=$(find target/deploy -name "*-keypair.json" | head -n 1)
+          PROG_ID=$(solana-keygen pubkey "$KEYPAIR_JSON")
+          SO_FILE=$(find target/deploy -name "*.so" | head -n 1)
+          
+          RPC_URL="${SOLANA_RPC_URL:-https://api.mainnet-beta.solana.com}"
+          
+          echo "Deploying Program ID: $PROG_ID to Mainnet..."
+          solana program deploy "$SO_FILE" \
+            --program-id "$KEYPAIR_JSON" \
+            --keypair id.json \
+            --url "$RPC_URL"
+            
+          LOCAL_HASH=$(cat local_hash.txt | tr -d '\r\n')
+          ONCHAIN_RAW=$(solana-verify get-program-hash --program-id "$PROG_ID" --url "$RPC_URL")
+          ONCHAIN_HASH=$(echo "$ONCHAIN_RAW" | grep -oE '[a-fA-F0-9]{64}' | head -n 1 | tr -d '\r\n')
+          
+          echo "=========================================="
+          echo "Local Hash:    [$LOCAL_HASH]"name: Fully Automated Verifiable Build & Deploy (Mainnet)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  LIBRARY_NAME: md1usd_solana
+  ANCHOR_VERSION: 0.31.1
+  SOLANA_VERSION: 2.1.0
+  RUST_VERSION: 1.81.0
+  SOLANA_VERIFY_VERSION: 0.4.11  # تثبيت أداة التحقق للحماية من التحديثات المفاجئة
+  SOLANA_RPC_URL: ${{ secrets.SOLANA_RPC_URL }}
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  auto-process-and-deploy:
+    name: Automated Build & Deploy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Checkout repository files
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install System Dependencies & Docker
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config build-essential libssl-dev libudev-dev libclang-dev protobuf-compiler grep coreutils
+          sudo systemctl start docker
+
+      - name: Pin Explicit Rust Toolchain
+        uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          components: rustfmt, clippy
+
+      - name: Install Node.js & Anchor CLI
+        run: |
+          set -eo pipefail
+          npm install -g @coral-xyz/anchor-cli@${{ env.ANCHOR_VERSION }}
+
+      - name: Install Pinned Solana CLI & Pinned solana-verify
+        run: |
+          set -eo pipefail
+          SOLANA_INSTALL_DIR="$HOME/.local/share/solana/install/active_release"
+          SOLANA_BIN="$SOLANA_INSTALL_DIR/bin"
+          curl -L --retry 5 --retry-delay 3 "https://release.anza.xyz/v${{ env.SOLANA_VERSION }}/install" | sh
+          echo "$SOLANA_BIN" >> $GITHUB_PATH
+          
+          # تثبيت solana-verify برقم إصدار ثابت لضمان مطابقة الهاش الأمنية
+          cargo install solana-verify --version ${{ env.SOLANA_VERIFY_VERSION }} --locked
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Build Verifiable Program inside Docker
+        run: |
+          set -eo pipefail
+          anchor clean
+          anchor build --verifiable -d solanafoundation/anchor:v${{ env.ANCHOR_VERSION }}
+
+      - name: Compute Clean Local Verifiable Hash
+        run: |
+          set -eo pipefail
+          FILE="target/deploy/${{ env.LIBRARY_NAME }}.so"
+          if [ ! -f "$FILE" ]; then
+            FILE=$(find target/deploy -name "*.so" | head -n 1)
+          fi
+          sha256sum "$FILE"
+          
           RAW_HASH=$(solana-verify get-program-hash "$FILE")
           echo "$RAW_HASH" | grep -oE '[a-fA-F0-9]{64}' | head -n 1 | tr -d '\r\n' > local_hash.txt
           echo "Computed Local Hash: [$(cat local_hash.txt)]"
@@ -101,6 +205,25 @@ jobs:
           
           echo "=========================================="
           echo "Local Hash:    [$LOCAL_HASH]"
+          echo "On-Chain Hash: [$ONCHAIN_HASH]"
+          echo "=========================================="
+          
+          if [ "$ONCHAIN_HASH" != "$LOCAL_HASH" ]; then
+            echo "Error: Hash Mismatch Detected!"
+            exit 1
+          fi
+          
+          echo "Verification Success: On-chain bytecode matches verifiable docker build!"
+          
+          echo "--- On-Chain Program Details ---"
+          solana program show "$PROG_ID" --url "$RPC_URL"
+
+      - name: Securely Shred Sensitive Keypair Files
+        if: always()
+        run: |
+          if [ -f id.json ]; then
+            shred -u id.json
+          fi
           echo "On-Chain Hash: [$ONCHAIN_HASH]"
           echo "=========================================="
           
