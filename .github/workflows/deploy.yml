@@ -136,6 +136,44 @@ jobs:
           echo "---- Cargo.lock ahash entries after update ----"
           grep -A 2 'name = "ahash"' Cargo.lock || echo "ahash not found in lockfile"
 
+      - name: Update anyhow to a version compatible with modern Rust
+        run: |
+          set -eo pipefail
+          echo "---- Current anyhow entries in Cargo.lock ----"
+          grep -A 2 'name = "anyhow"' Cargo.lock || echo "anyhow not found in lockfile"
+
+          CURRENT=$(grep -A 1 'name = "anyhow"' Cargo.lock | grep '^version' | head -n 1 | sed -E 's/version = "(.*)"/\1/')
+
+          if [ -z "$CURRENT" ]; then
+            echo "anyhow not present in Cargo.lock - nothing to patch, continuing"
+            exit 0
+          fi
+
+          echo "Detected current anyhow version: $CURRENT"
+
+          # النسخ القديمة من anyhow (قبل 1.0.60 تقريباً) بتعتمد على شكل قديم
+          # من backtrace API في trait std::error::Error، وده بيفشل مع أي
+          # Rust toolchain حديث (زي 1.84.1 جوه حاوية solana-verify).
+          # نقارن رقم الـ patch version؛ لو أقل من 60 نعمل باتش لإصدار حديث.
+          MAJOR=$(echo "$CURRENT" | cut -d. -f1)
+          MINOR=$(echo "$CURRENT" | cut -d. -f2)
+          PATCH=$(echo "$CURRENT" | cut -d. -f3)
+
+          NEEDS_PATCH=0
+          if [ "$MAJOR" = "1" ] && [ "$MINOR" = "0" ] && [ "$PATCH" -lt 60 ] 2>/dev/null; then
+            NEEDS_PATCH=1
+          fi
+
+          if [ "$NEEDS_PATCH" = "1" ]; then
+            echo "anyhow $CURRENT predates the backtrace API fix - patching to a modern release"
+            cargo update -p anyhow --precise 1.0.95
+          else
+            echo "anyhow version ($CURRENT) is already modern enough - skipping patch"
+          fi
+
+          echo "---- Cargo.lock anyhow entries after update ----"
+          grep -A 2 'name = "anyhow"' Cargo.lock || echo "anyhow not found in lockfile"
+
       - name: Fix Cargo.lock version for toolchain compatibility (v4 to v3)
         run: |
           set -eo pipefail
