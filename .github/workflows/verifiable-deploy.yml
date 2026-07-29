@@ -21,6 +21,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Check Cargo.lock presence
         run: |
@@ -66,28 +68,24 @@ jobs:
       - name: Install and Validate AVM & Pinned Anchor CLI
         run: |
           set -eo pipefail
-          # تصحيح مسار أداة avm لتكون في مسار تثبيت cargo الصحيح
           AVM_BIN="$HOME/.cargo/bin/avm"
           
           if [ ! -f "$AVM_BIN" ]; then
-            echo "AVM binary not found, installing via cargo..."
-            cargo install avm --git https://github.com/solana-foundation/anchor --tag v${{ env.ANCHOR_VERSION }} --locked
+            echo "AVM binary not found, installing via cargo without strict lock to bypass yanked crates..."
+            cargo install avm --git https://github.com/solana-foundation/anchor --tag v${{ env.ANCHOR_VERSION }}
           fi
           
           echo "$HOME/.cargo/bin" >> $GITHUB_PATH
           
-          if ! "$AVM_BIN" list 2>/dev/null | grep -q "${{ env.ANCHOR_VERSION }}"; then
-            echo "Anchor version ${{ env.ANCHOR_VERSION }} not found in avm, installing..."
-            "$AVM_BIN" install ${{ env.ANCHOR_VERSION }}
-          else
-            echo "Anchor version ${{ env.ANCHOR_VERSION }} already available via avm."
-          fi
+          # تثبيت إصدار Anchor صراحةً بدون تفاعل بشري لتجنب مشكلة Expected input
+          echo "Installing Anchor version ${{ env.ANCHOR_VERSION }} via avm non-interactively..."
+          "$AVM_BIN" install ${{ env.ANCHOR_VERSION }}
           "$AVM_BIN" use ${{ env.ANCHOR_VERSION }}
 
-      - name: Install solana-verify CLI strictly
+      - name: Install solana-verify CLI
         run: |
           set -eo pipefail
-          cargo install solana-verify --locked
+          cargo install solana-verify
           echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
       - name: Verify final tool versions
