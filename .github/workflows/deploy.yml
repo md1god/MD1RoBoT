@@ -12,7 +12,7 @@ env:
   LIBRARY_NAME: md1usd
   ANCHOR_VERSION: 0.31.0
   SOLANA_VERSION: 2.1.0
-  RUST_VERSION: 1.90.0
+  RUST_VERSION: 1.85.0
   SOLANA_RPC_URL: ${{ secrets.SOLANA_RPC_URL }}
   RUSTFLAGS: "-D warnings"
 
@@ -20,7 +20,7 @@ jobs:
   build:
     name: 1. Verifiable Build & Audit
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 45
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -40,7 +40,7 @@ jobs:
             ~/.cargo/git
             ~/.cargo/bin
             ~/.local/share/solana
-          key: ${{ runner.os }}-rust-${{ env.RUST_VERSION }}-anchor-${{ env.ANCHOR_VERSION }}-solana-${{ env.SOLANA_VERSION }}-${{ hashFiles('**/Cargo.toml') }}
+          key: ${{ runner.os }}-rust-${{ env.RUST_VERSION }}-anchor-${{ env.ANCHOR_VERSION }}-solana-${{ env.SOLANA_VERSION }}-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}
 
       - name: Install Modern Solana CLI (Agave)
         run: |
@@ -62,12 +62,12 @@ jobs:
           fi
           echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
-      - name: Ensure Cargo.lock exists for deterministic builds
+      - name: Verify Cargo.lock Existence
         run: |
           set -eo pipefail
           if [ ! -f "Cargo.lock" ]; then
-            echo "Cargo.lock is missing. Generating it automatically..."
-            cargo generate-lockfile
+            echo "Error: Cargo.lock is missing in root directory!"
+            exit 1
           fi
 
       - name: Deterministic Build via Docker Container
@@ -104,24 +104,22 @@ jobs:
     name: 2. Mainnet Deploy & Strict Verification
     needs: build
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 45
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Download Build Artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/upload-artifact@v4
         with:
           name: verifiable-program-artifacts
           path: target/deploy/
 
-      - name: Cache restore for CLI tools
-        uses: actions/cache@v4
+      - name: Download Build Artifacts (Action)
+        uses: actions/download-artifact@v4
         with:
-          path: |
-            ~/.cargo/bin
-            ~/.local/share/solana
-          key: ${{ runner.os }}-rust-${{ env.RUST_VERSION }}-anchor-${{ env.ANCHOR_VERSION }}-solana-${{ env.SOLANA_VERSION }}-${{ hashFiles('**/Cargo.toml') }}
+          name: verifiable-program-artifacts
+          path: target/deploy/
 
       - name: Setup Environment Paths
         run: |
