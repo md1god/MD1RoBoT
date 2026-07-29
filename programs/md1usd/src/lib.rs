@@ -1,3 +1,13 @@
+#[cfg(not(feature = "no-entrypoint"))]
+solana_security_txt::security_txt! {
+    name: "MD1usd Stablecoin",
+    project_url: "https://yourdomain.com",
+    contacts: "email:security@yourdomain.com",
+    policy: "https://yourdomain.com/security-policy",
+    preferred_language: "en",
+    acknowledgements: "Audited by Security Team"
+}
+
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Burn, Mint, MintTo, Token, TokenAccount, Transfer};
 
