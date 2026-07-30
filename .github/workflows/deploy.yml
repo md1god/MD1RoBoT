@@ -105,6 +105,7 @@ jobs:
           set -eo pipefail
           declare -A SAFE_VERSIONS=(
             ["block-buffer"]="0.10.4"
+            ["cpufeatures"]="0.2.12"
           )
           for PKG in "${!SAFE_VERSIONS[@]}"; do
             SAFE="${SAFE_VERSIONS[$PKG]}"
