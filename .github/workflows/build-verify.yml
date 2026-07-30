@@ -1,0 +1,80 @@
+name: Build and Verify Solana Program
+on:
+  push:
+    branches: ["master"]
+  pull_request:
+    branches: ["master"]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PROGRAM_ID: 3fN2LAt47q3oSgNq4dJZt4DuAh5yJw6mb6B3dRYJGHa8
+
+jobs:
+  build-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Fix declared rust-version to match the verification toolchain (1.75.0)
+        run: |
+          sed -i 's/rust-version = "1.89.0"/rust-version = "1.75.0"/' Cargo.toml
+          echo "---- Root Cargo.toml after fix ----"
+          cat Cargo.toml
+
+      - name: Switch to Stable Rust to install solana-verify CLI
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install solana-verify CLI (using stable cargo)
+        run: |
+          cargo install solana-verify --locked
+
+      - name: Install Nightly Rust (only to resolve minimal-version lockfile)
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Generate lockfile using OLDEST compatible dependency versions
+        run: |
+          rm -f Cargo.lock
+          cargo +nightly generate-lockfile -Z minimal-versions
+          echo "---- lockfile head ----"
+          head -10 Cargo.lock
+
+      - name: Fix Cargo.lock version for Rust 1.75 compatibility
+        run: |
+          sed -i '0,/^version = /{s/^version = 4/version = 3/}' Cargo.lock
+          head -5 Cargo.lock
+
+      - name: Build Verifiable Program inside Docker
+        run: |
+          solana-verify build
+
+      - name: Get local executable hash
+        run: |
+          solana-verify get-executable-hash target/deploy/*.so
+
+      - name: Check IDL and Deploy outputs
+        run: |
+          ls -la target/idl || echo "IDL folder not found"
+          ls -la target/deploy || echo "Deploy folder not found"
+
+      - name: Package build output as zip
+        run: |
+          mkdir -p release-package
+          cp -r target/deploy release-package/ 2>/dev/null || true
+          cp -r target/idl release-package/ 2>/dev/null || true
+          cd release-package
+          zip -r ../anchor-build-${{ github.sha }}.zip .
+          cd ..
+
+      - name: Upload zip artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: anchor-build-${{ github.sha }}
+          path: anchor-build-${{ github.sha }}.zip
+          retention-days: 14
+          if-no-files-found: error
