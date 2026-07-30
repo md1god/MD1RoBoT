@@ -104,9 +104,6 @@ jobs:
           find . -maxdepth 2 -name "Cargo.toml" -exec sed -i 's/^edition = "2024"/edition = "2021"/' {} \;
           rm -f Cargo.lock
           cargo generate-lockfile
-          if [ -f "Cargo.lock" ]; then
-            sed -i '0,/^version = /{s/^version = 4/version = 3/}' Cargo.lock
-          fi
 
       - name: Commit synced files back to repo
         env:
@@ -146,8 +143,10 @@ jobs:
               echo "Known cause: hashbrown/ahash incompatibility. Fixing package specification."
               cargo update -p hashbrown --precise 0.13.2 || true
               cargo update -p ahash --precise 0.8.11 || true
-            elif grep -qiE "edition ?2024|feature \`edition2024\`" build.log; then
-              echo "Known cause: edition2024 unsupported in dependency. Forcing edition downgrade and resetting lockfile."
+            elif grep -qiE "edition2024|edition \`edition2024\`|feature \`edition2024\`" build.log; then
+              echo "Known cause: edition2024 unsupported in dependency. Downgrading cpufeatures and toml_parser..."
+              cargo update -p cpufeatures --precise 0.2.12 || true
+              cargo update -p toml_parser --precise 1.0.0 || true
               find . -maxdepth 3 -name "Cargo.toml" -exec sed -i 's/^edition = "2024"/edition = "2021"/' {} \;
               rm -f Cargo.lock
               cargo generate-lockfile
