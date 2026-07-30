@@ -1,0 +1,37 @@
+name: Build Using Official Prebuilt Anchor Image
+on:
+  workflow_dispatch:
+env:
+  PROGRAM_ID: 3fN2LAt47q3oSgNq4dJZt4DuAh5yJw6mb6B3dRYJGHa8
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: solanafoundation/anchor:v1.1.2
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Show pre-installed versions
+        run: |
+          rustc --version
+          anchor --version
+          solana --version
+
+      - name: Build
+        run: |
+          anchor build
+
+      - name: Get hash of build
+        run: |
+          sha256sum target/deploy/md1usd_solana.so
+
+      - name: Show generated IDL
+        run: |
+          cat target/idl/md1usd_solana.json
+
+      - name: Upload IDL as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: md1usd_solana-idl
+          path: target/idl/md1usd_solana.json

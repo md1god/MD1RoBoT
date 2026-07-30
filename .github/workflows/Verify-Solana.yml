@@ -1,0 +1,65 @@
+name: Verify Solana Program (using known-good build)
+on:
+  workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+env:
+  PROGRAM_ID: 3fN2LAt47q3oSgNq4dJZt4DuAh5yJw6mb6B3dRYJGHa8
+jobs:
+  verify-existing-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Solana CLI
+        run: |
+          sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
+
+      - name: Install Rust (stable, for solana-verify CLI only)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install solana-verify CLI
+        run: |
+          cargo install solana-verify --locked
+
+      - name: Confirm the known-good .so file is present
+        run: |
+          ls -la programs/md1usd_solana/target/deploy/md1usd_solana.so
+
+      - name: Get hash of the known-good build (should be bb52b7e5...)
+        run: |
+          solana-verify get-executable-hash programs/md1usd_solana/target/deploy/md1usd_solana.so
+
+      - name: Get on-chain hash for comparison
+        run: |
+          solana-verify get-program-hash ${{ env.PROGRAM_ID }} --url ${{ secrets.SOLANA_RPC_URL }}
+
+      - name: Setup verify authority keypair
+        run: |
+          echo '${{ secrets.VERIFY_AUTHORITY_KEYPAIR }}' > verify-authority.json
+          solana-keygen pubkey verify-authority.json
+
+      - name: Configure Solana CLI (creates the config file solana-verify needs)
+        run: |
+          solana config set --keypair verify-authority.json --url ${{ secrets.SOLANA_RPC_URL }}
+
+      - name: Submit verification PDA using the existing build (skip rebuild)
+        run: |
+          yes | solana-verify verify-from-repo https://github.com/md1god/MD1usd_solana \
+            --program-id ${{ env.PROGRAM_ID }} \
+            --library-name md1usd_solana \
+            --skip-build \
+            -u ${{ secrets.SOLANA_RPC_URL }} \
+            -k verify-authority.json
+
+      - name: Submit remote verification job (OtterSec)
+        run: |
+          solana-verify remote submit-job \
+            --program-id ${{ env.PROGRAM_ID }} \
+            --uploader 7WKER22cnTne1XjLk8EUiyVcTdKau9caYpaSSLXTeQUn
