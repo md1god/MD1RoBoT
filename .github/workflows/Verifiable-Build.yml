@@ -15,6 +15,7 @@ concurrency:
 env:
   LIBRARY_NAME: md1usd
   SOLANA_RPC_URL: ${{ secrets.SOLANA_RPC_URL }}
+  PROGRAM_ID: ""
 
 jobs:
   build:
@@ -28,8 +29,10 @@ jobs:
           submodules: recursive
 
       - name: Docker login (avoid Docker Hub anonymous rate limit)
+        env:
+          DOCKER_PAT: ${{ secrets.DOCKER_PAT }}
         run: |
-          echo "${{ secrets.DOCKER_PAT }}" | docker login -u dido599999 --password-stdin
+          echo "$DOCKER_PAT" | docker login -u dido599999 --password-stdin
 
       - name: Install latest stable Rust
         uses: dtolnay/rust-toolchain@stable
@@ -65,13 +68,16 @@ jobs:
           echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
       - name: Load existing program keypair, or generate ONE-TIME only
+        env:
+          LIB_NAME: ${{ env.LIBRARY_NAME }}
+          PROG_KEYPAIR: ${{ secrets.PROGRAM_KEYPAIR }}
         run: |
           set -eo pipefail
           mkdir -p target/deploy
-          KEYPAIR_PATH="target/deploy/${{ env.LIBRARY_NAME }}-keypair.json"
+          KEYPAIR_PATH="target/deploy/${LIB_NAME}-keypair.json"
 
-          if [ -n "${{ secrets.PROGRAM_KEYPAIR }}" ]; then
-            echo "${{ secrets.PROGRAM_KEYPAIR }}" \vert{} base64 -d > "$KEYPAIR_PATH"
+          if [ -n "$PROG_KEYPAIR" ]; then
+            echo "$PROG_KEYPAIR" | base64 -d > "$KEYPAIR_PATH"
             echo "::notice::تم تحميل مفتاح البرنامج الحالي من السر PROGRAM_KEYPAIR."
           else
             solana-keygen new --no-bip39-passphrase --silent -o "$KEYPAIR_PATH"
@@ -83,11 +89,13 @@ jobs:
           echo "PROGRAM_ID=$PROGRAM_ID" >> $GITHUB_ENV
 
       - name: Sync declare_id! and Anchor.toml [programs.mainnet] with Program ID
+        env:
+          LIB_NAME: ${{ env.LIBRARY_NAME }}
         run: |
           set -eo pipefail
           find . -path "*/src/lib.rs" -exec sed -i "s/declare_id!(\"[A-Za-z0-9]*\")/declare_id!(\"${PROGRAM_ID}\")/" {} \;
           if [ -f "Anchor.toml" ]; then
-            sed -i "/\[programs.mainnet\]/,/^\[/{s/^${{ env.LIBRARY_NAME }} = \".*\"/${{ env.LIBRARY_NAME }} = \"${PROGRAM_ID}\"/}" Anchor.toml
+            sed -i "/\[programs.mainnet\]/,/^\[/{s/^${LIB_NAME} = \".*\"/${LIB_NAME} = \"${PROGRAM_ID}\"/}" Anchor.toml
           fi
 
       - name: Normalize known compatibility issues before first attempt
@@ -101,6 +109,8 @@ jobs:
           fi
 
       - name: Commit synced files back to repo
+        env:
+          REF_NAME: ${{ github.ref_name }}
         run: |
           set -eo pipefail
           git config user.name "github-actions[bot]"
@@ -108,20 +118,24 @@ jobs:
           git add Cargo.toml Cargo.lock Anchor.toml '**/src/lib.rs'
           if ! git diff --cached --quiet; then
             git commit -m "chore: sync program id + lockfile [skip ci]"
-            git pull --rebase origin ${{ github.ref_name }}
-            git push origin HEAD:${{ github.ref_name }}
+            git pull --rebase origin "$REF_NAME"
+            git push origin "HEAD:$REF_NAME"
           else
             echo "No changes to commit - files already in sync"
           fi
 
-      - name: Deterministic Build (auto-diagnoses & retries known failure causes)
+      - name: Deterministic Build (auto-diagnoses & strict safety stop)
+        env:
+          LIB_NAME: ${{ env.LIBRARY_NAME }}
         run: |
           set -o pipefail
           MAX_ATTEMPTS=4
           ATTEMPT=1
-          until [ $ATTEMPT -gt$MAX_ATTEMPTS ]; do
-            echo "==== Build attempt $ATTEMPT of$MAX_ATTEMPTS ===="
-            if solana-verify build --library-name ${{ env.LIBRARY_NAME }} 2>&1 | tee build.log; then
+          
+          while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
+            echo "==== Build attempt $ATTEMPT of $MAX_ATTEMPTS ===="
+            
+            if solana-verify build --library-name "$LIB_NAME" 2>&1 | tee build.log; then
               echo "Build succeeded."
               break
             fi
@@ -129,37 +143,37 @@ jobs:
             echo "Build failed — checking for known causes..."
 
             if grep -qiE "stdsimd|ahash|hashbrown" build.log; then
-              echo "Known cause: hashbrown/ahash incompatibility. Pinning compatible versions and retrying."
-              cargo update -p hashbrown --precise 0.13.2 --workspace || true
-              cargo update -p ahash --precise 0.8.11 --workspace || true
+              echo "Known cause: hashbrown/ahash incompatibility. Fixing package specification."
+              cargo update -p hashbrown --precise 0.13.2 || true
+              cargo update -p ahash --precise 0.8.11 || true
             elif grep -qiE "edition ?2024|feature \`edition2024\`" build.log; then
-              echo "Known cause: edition2024 unsupported. Forcing edition 2021 and retrying."
-              find . -maxdepth 2 -name "Cargo.toml" -exec sed -i 's/^edition = "2024"/edition = "2021"/' {} \;
-              rm -f Cargo.lock && cargo generate-lockfile
-            elif grep -qi "lock file version 4" build.log; then
-              echo "Known cause: Cargo.lock v4 unsupported. Downgrading lockfile format and retrying."
-              sed -i '0,/^version = /{s/^version = 4/version = 3/}' Cargo.lock
+              echo "Known cause: edition2024 unsupported in dependency. Forcing edition downgrade and resetting lockfile."
+              find . -maxdepth 3 -name "Cargo.toml" -exec sed -i 's/^edition = "2024"/edition = "2021"/' {} \;
+              rm -f Cargo.lock
+              cargo generate-lockfile
             else
-              echo "::error::سبب فشل غير معروف من قبل — إيقاف تلقائي بدل التخمين. اللوج الكامل فوق."
+              echo "::error::سبب فشل غير معروف — إيقاف فوري لمنع التكرار."
               exit 1
             fi
 
             ATTEMPT=$((ATTEMPT + 1))
           done
 
-          if [ $ATTEMPT -gt$MAX_ATTEMPTS ]; then
-            echo "::error::تم تجاوز الحد الأقصى لمحاولات الإصلاح الذاتي."
+          if [ $ATTEMPT -gt $MAX_ATTEMPTS ]; then
+            echo "::error::تم تجاوز الحد الأقصى (4 محاولات). إيقاف إجباري للعملية!"
             exit 1
           fi
 
       - name: Compute Program Hash & Package Artifacts
+        env:
+          LIB_NAME: ${{ env.LIBRARY_NAME }}
         run: |
           set -eo pipefail
-          FILE="target/deploy/${{ env.LIBRARY_NAME }}.so"
+          FILE="target/deploy/${LIB_NAME}.so"
           if [ ! -f "$FILE" ]; then
             FILE=$(find target/deploy -name "*.so" | head -n 1)
           fi
-          if [ -z "$FILE" ] \vert{}\vert{} [ ! -f "$FILE" ]; then
+          if [ -z "$FILE" ] || [ ! -f "$FILE" ]; then
             echo "Error: Compiled .so file not found!"
             exit 1
           fi
@@ -199,48 +213,56 @@ jobs:
           echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
       - name: Setup Temporary Wallet Keypair
+        env:
+          VERIFY_KEYPAIR: ${{ secrets.VERIFY_AUTHORITY_KEYPAIR }}
         run: |
           set -eo pipefail
           install -m 600 /dev/null id.json
-          printf '%s' '${{ secrets.VERIFY_AUTHORITY_KEYPAIR }}' > id.json
+          printf '%s' "$VERIFY_KEYPAIR" > id.json
 
       - name: Check wallet balance vs required rent
+        env:
+          RPC_URL: ${{ env.SOLANA_RPC_URL }}
         run: |
           set -eo pipefail
-          solana config set --keypair id.json --url "$SOLANA_RPC_URL"
+          solana config set --keypair id.json --url "$RPC_URL"
           SO_FILE=$(find target/deploy -name "*.so" | head -n 1)
-          solana balance --url "$SOLANA_RPC_URL"
-          solana rent "$(stat -c%s "$SO_FILE")" --url "$SOLANA_RPC_URL"
+          solana balance --url "$RPC_URL"
+          solana rent "$(stat -c%s "$SO_FILE")" --url "$RPC_URL"
 
       - name: Deploy or Upgrade Program on Mainnet (Smart Handler)
+        env:
+          RPC_URL: ${{ env.SOLANA_RPC_URL }}
         run: |
           set -eo pipefail
           SO_FILE=$(find target/deploy -name "*.so" | head -n 1)
           KEYPAIR_FILE=$(find target/deploy -name "*-keypair.json" | head -n 1)
           PROGRAM_ID=$(solana-keygen pubkey "$KEYPAIR_FILE")
 
-          if solana program show "$PROGRAM_ID" --url "$SOLANA_RPC_URL" &>/dev/null; then
+          if solana program show "$PROGRAM_ID" --url "$RPC_URL" &>/dev/null; then
             echo "البرنامج منشور مسبقاً على الشبكة. جارٍ تنفيذ التحديث (Upgrade)..."
             solana program upgrade "$SO_FILE" \
               "$PROGRAM_ID" \
               --keypair id.json \
-              --url "$SOLANA_RPC_URL"
+              --url "$RPC_URL"
           else
             echo "البرنامج جديد كلياً. جارٍ تنفيذ النشر لأول مرة (Initial Deploy)..."
             solana program deploy "$SO_FILE" \
               --program-id "$KEYPAIR_FILE" \
               --keypair id.json \
-              --url "$SOLANA_RPC_URL"
+              --url "$RPC_URL"
           fi
 
       - name: Confirm On-Chain Hash Verification (STOPS EVERYTHING on mismatch)
+        env:
+          RPC_URL: ${{ env.SOLANA_RPC_URL }}
         run: |
           set -eo pipefail
           KEYPAIR_FILE=$(find target/deploy -name "*-keypair.json" | head -n 1)
           PROGRAM_ID=$(solana-keygen pubkey "$KEYPAIR_FILE")
           LOCAL_HASH=$(cat target/deploy/local_hash.txt)
 
-          ONCHAIN_HASH=$(solana-verify get-program-hash --program-id "$PROGRAM_ID" --url "$SOLANA_RPC_URL")
+          ONCHAIN_HASH=$(solana-verify get-program-hash --program-id "$PROGRAM_ID" --url "$RPC_URL")
 
           echo "Local Hash:    $LOCAL_HASH"
           echo "On-Chain Hash: $ONCHAIN_HASH"
@@ -254,20 +276,26 @@ jobs:
           echo "PROGRAM_ID=$PROGRAM_ID" >> $GITHUB_ENV
 
       - name: Submit verification PDA on-chain
+        env:
+          PROG_ID: ${{ env.PROGRAM_ID }}
+          LIB_NAME: ${{ env.LIBRARY_NAME }}
+          RPC_URL: ${{ env.SOLANA_RPC_URL }}
         run: |
           set -eo pipefail
-          solana config set --keypair id.json --url "$SOLANA_RPC_URL"
+          solana config set --keypair id.json --url "$RPC_URL"
           yes | solana-verify verify-from-repo \
-            --program-id ${{ env.PROGRAM_ID }} \
-            --library-name ${{ env.LIBRARY_NAME }} \
-            -u "$SOLANA_RPC_URL" \
+            --program-id "$PROG_ID" \
+            --library-name "$LIB_NAME" \
+            -u "$RPC_URL" \
             https://github.com/md1god/MD1usd_solana \
             || echo "PDA upload failed or RPC issue - continuing"
 
       - name: Submit remote verification job (OtterSec)
+        env:
+          PROG_ID: ${{ env.PROGRAM_ID }}
         run: |
           solana-verify remote submit-job \
-            --program-id ${{ env.PROGRAM_ID }} \
+            --program-id "$PROG_ID" \
             --uploader 7WKER22cnTne1XjLk8EUiyVcTdKau9caYpaSSLXTeQUn \
             || echo "Remote job submission failed or still processing - check Solscan later"
 
