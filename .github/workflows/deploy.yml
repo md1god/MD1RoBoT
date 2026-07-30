@@ -100,6 +100,20 @@ jobs:
             grep -A 2 "name = \"$PKG\"" Cargo.lock | head -20 || echo "  not found"
           done
 
+      - name: Prevent packages requiring edition2024 (incompatible with verify toolchain)
+        run: |
+          set -eo pipefail
+          declare -A SAFE_VERSIONS=(
+            ["block-buffer"]="0.10.4"
+          )
+          for PKG in "${!SAFE_VERSIONS[@]}"; do
+            SAFE="${SAFE_VERSIONS[$PKG]}"
+            if grep -q "name = \"$PKG\"" Cargo.lock; then
+              echo "==> Pinning $PKG to $SAFE (edition2024-safe)"
+              cargo update -p "$PKG" --precise "$SAFE" || echo "  (could not pin $PKG, may not be in graph with this exact name)"
+            fi
+          done
+
       - name: Fix Cargo.lock version for toolchain compatibility (v4 to v3)
         run: |
           set -eo pipefail
