@@ -7,7 +7,7 @@ seeds = true
 skip-lint = false
 
 [programs.mainnet]
-md1usd = "BzRQXXEyTkHvBze1itrcJuAAiCuJ92xVEth3vEfa68wK"
+md1usd = "HMkyZFHBfXVVuDpbPbFvX7wdwosAZ8iwKdg4JY1vBapj"
 
 [registry]
 url = "https://api.mainnet-beta.solana.com"
