@@ -11,7 +11,7 @@ solana_security_txt::security_txt! {
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Burn, Mint, MintTo, Token, TokenAccount, Transfer};
 
-declare_id!("Md1usdSoLXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX");
+declare_id!("BzRQXXEyTkHvBze1itrcJuAAiCuJ92xVEth3vEfa68wK");
 
 #[program]
 pub mod md1usd {
