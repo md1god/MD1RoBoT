@@ -1,0 +1,11 @@
+[package]
+name = "genesis_core"
+version = "0.8.0"
+edition = "2021"
+
+[dependencies]
+rusqlite = { version = "0.31", features = ["bundled"] }
+serde_json = "1.0"
+sha2 = "0.10"
+uuid = { version = "1", features = ["v4"] }
+ureq = { version = "2", features = ["json"] }
