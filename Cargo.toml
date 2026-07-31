@@ -1,7 +1,7 @@
 [package]
 name = "genesis_core"
 version = "0.8.0"
-edition = "2021"   # أو 2024 – كلاهما سيعمل مع Rust 1.85
+edition = "2021"
 
 [dependencies]
 rusqlite = { version = "0.31", features = ["bundled"] }
