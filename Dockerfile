@@ -1,6 +1,5 @@
-FROM rust:1.77-slim-bookworm
+FROM rust:1.83-slim-bookworm
 
-# تثبيت الأدوات الأساسية + zstd (إصلاح خطأ Ollama)
 RUN apt-get update && apt-get install -y \
     curl \
     pkg-config \
@@ -8,7 +7,6 @@ RUN apt-get update && apt-get install -y \
     zstd \
     && rm -rf /var/lib/apt/lists/*
 
-# تثبيت Ollama (بعد توفير zstd)
 RUN curl -fsSL https://ollama.com/install.sh | sh
 
 WORKDIR /app
