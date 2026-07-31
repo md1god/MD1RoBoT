@@ -1,4 +1,4 @@
-FROM rust:1.84-slim-bookworm
+FROM rust:nightly-slim
 
 RUN apt-get update && apt-get install -y \
     curl \
