@@ -1,9 +1,0 @@
-[workspace]
-members = [
-    "programs/md1usd"
-]
-resolver = "2"
-
-[workspace.metadata.cli]
-solana-version = "2.1.0"
-anchor-version = "0.31.0"
