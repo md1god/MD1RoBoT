@@ -1,4 +1,4 @@
-FROM rustlang/rust:nightly-slim-bookworm
+FROM rust:nightly-slim-bookworm
 
 RUN apt-get update && apt-get install -y \
     curl \
@@ -13,7 +13,7 @@ WORKDIR /app
 COPY Cargo.toml .
 COPY src/ src/
 
-RUN cargo +nightly build --release
+RUN cargo build --release
 
 VOLUME ["/app/memory", "/app/backups"]
 
