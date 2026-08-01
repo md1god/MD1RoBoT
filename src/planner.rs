@@ -10,6 +10,7 @@ use crate::protocol::{Verdict, Evaluation, Suggestion};
 use crate::config_loader::AppConfig;
 use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
+use sha2::Digest;
 
 pub struct Planner {
     brain: Brain,
