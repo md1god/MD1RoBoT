@@ -14,7 +14,7 @@ impl EvolutionLab {
 
         let target = Path::new(&temp_dir).join(&suggestion.file_path);
         let content = fs::read_to_string(&target).map_err(|e| format!("Read file: {e}"))?;
-        if let Some(pos) = content.find(&suggestion.original_snippet) {
+        if let Some(_pos) = content.find(&suggestion.original_snippet) {
             let new_content = content.replace(&suggestion.original_snippet, &suggestion.new_snippet);
             fs::write(&target, new_content).map_err(|e| format!("Write modification: {e}"))?;
         } else {
