@@ -8,9 +8,9 @@ impl GoalManager {
 
     pub fn current_goals(&self) -> Vec<String> {
         vec![
-            "تحسين سرعة البحث وجلب المحتوى الكامل".to_string(),
-            "تقليل استهلاك الذاكرة أثناء التطور".to_string(),
-            "زيادة نسبة نجاح الطفرات عبر تحسين جودة الاقتراحات".to_string(),
+            "Improve search speed and content retrieval".to_string(),
+            "Reduce memory usage during evolution".to_string(),
+            "Increase mutation success rate via better suggestions".to_string(),
         ]
     }
 }
