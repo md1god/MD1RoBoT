@@ -2,7 +2,6 @@ pub struct IndependentVerifier;
 
 impl IndependentVerifier {
     pub fn verify_compilation() -> bool {
-        // يمكن استدعاء الأمر المناسب حسب اللغة، هنا مجرد مثال
         true
     }
 
