@@ -29,10 +29,6 @@ impl Planner {
         let ctx_builder = ContextBuilder::new(self.db.clone(), self.goal_manager.clone());
         let ctx = ctx_builder.build();
 
-        let default_lang = ctx.current_genome.as_ref()
-            .and_then(|g| g.files_changed.first().map(|f| detect_language(f)))
-            .unwrap_or_else(|| "rust".to_string());
-
         let proposals = Crazy::propose_mutations(&mut self.brain, &ctx, 5)?;
 
         let mut best_score = 0.0;
@@ -42,7 +38,7 @@ impl Planner {
 
         for prop in proposals {
             let sug = &prop.suggestion;
-            let (lab_ok, pheno_opt, errors) = EvolutionLab::run_experiment(".", sug)?;
+            let (_lab_ok, pheno_opt, errors) = EvolutionLab::run_experiment(".", sug)?;
             let evaluation = kreza.evaluate(&mut self.brain, &prop, &ctx, pheno_opt.as_ref(), &errors);
             let error_hash = EvolutionController::hash_mutation(&sug.file_path, &sug.original_snippet, &sug.new_snippet);
 
@@ -82,14 +78,15 @@ impl Planner {
             }
         }
 
-        if let Some((sug, eval, pheno)) = best_plan {
+        if let Some((sug, _eval, pheno)) = best_plan {
             let target_file = &sug.file_path;
             let original_content = std::fs::read_to_string(target_file)
                 .map_err(|e| format!("Failed to read original file: {e}"))?;
             let new_content = original_content.replace(&sug.original_snippet, &sug.new_snippet);
             let backup = format!("{}.bak", target_file);
             std::fs::copy(target_file, &backup).ok();
-            std::fs::write(target_file, new_content).map_err(|e| format!("Failed to write mutation: {e}"))?;
+            // Use a reference to avoid moving new_content
+            std::fs::write(target_file, &new_content).map_err(|e| format!("Failed to write mutation: {e}"))?;
 
             let new_gen = self.evo.increment_generation()?;
             let fitness = Fitness {
