@@ -4,10 +4,10 @@ mod db;
 mod search;
 mod seed;
 mod protocol;
-mod context;
-mod evolution;
-mod lab;
-mod goals;
+mod context_builder;      // كان context
+mod evolution;           // لا تغيير
+mod evolution_lab;       // كان lab
+mod goals;               // كان goal_manager لكننا سنحتفظ بالاسم goals للملف goal_manager.rs؟ 
 mod planner;
 mod crazy;
 mod kreza;
