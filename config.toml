@@ -17,5 +17,5 @@ cpp = "deepseek-coder:6.7b"
 default = "qwen2.5-coder:7b"
 
 [kreza]
-use_ensemble = false                 # جربه بقيمة true لاحقاً
+use_ensemble = false
 ensemble_models = ["qwen2.5-coder:7b", "deepseek-coder:6.7b"]
