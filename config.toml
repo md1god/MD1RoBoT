@@ -1,0 +1,21 @@
+[evolution]
+max_cycles = 5
+health_threshold = 0.7
+
+[fitness_weights]
+performance = 0.35
+memory = 0.20
+reliability = 0.30
+maintainability = 0.15
+
+[models]
+rust = "deepseek-coder:6.7b"
+python = "qwen2.5-coder:7b"
+javascript = "qwen2.5-coder:7b"
+c = "deepseek-coder:6.7b"
+cpp = "deepseek-coder:6.7b"
+default = "qwen2.5-coder:7b"
+
+[kreza]
+use_ensemble = false                 # جربه بقيمة true لاحقاً
+ensemble_models = ["qwen2.5-coder:7b", "deepseek-coder:6.7b"]
