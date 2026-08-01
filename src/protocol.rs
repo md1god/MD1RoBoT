@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use crate::db::{Fitness, Phenotype};
-use crate::genome::{GenomeNode, GenomeStatus, KnowledgeReference};
+use crate::genome::GenomeNode;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum AgentRole {
@@ -16,7 +16,7 @@ pub struct Suggestion {
     pub agent: AgentRole,
     pub generation: u64,
     pub file_path: String,
-    pub language: String,          // مثل "rust", "python", "javascript"
+    pub language: String,
     pub original_snippet: String,
     pub new_snippet: String,
     pub reason: String,
