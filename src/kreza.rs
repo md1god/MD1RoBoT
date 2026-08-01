@@ -1,8 +1,8 @@
-use crate::brain::{Brain, TaskType, ThoughtRequest};
-use crate::protocol::{MutationProposal, Verdict, Evaluation, AgentRole, EvolutionContext};
+use crate::brain::Brain;
+use crate::protocol::{MutationProposal, Verdict, Evaluation, EvolutionContext};
 use crate::db::{Phenotype, Fitness};
 use crate::config_loader::AppConfig;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 struct KrezaResponse {
@@ -133,7 +133,7 @@ impl Kreza {
 
     fn llm_evaluation_with_model(
         &self,
-        brain: &mut Brain,
+        _brain: &mut Brain,
         proposal: &MutationProposal,
         ctx: &EvolutionContext,
         phenotype: Option<&Phenotype>,
@@ -191,7 +191,7 @@ impl Kreza {
                 Evaluation { verdict, score, metrics, fitness_delta: delta }
             },
             Err(e) => Evaluation {
-                verdict: Verdict::Reject { reason: format!("JSON invalid: {}", e) },
+                verdict: Verdict::Reject { reason: format!("Invalid JSON: {}", e) },
                 score: 0.0,
                 metrics: vec![],
                 fitness_delta: delta,
