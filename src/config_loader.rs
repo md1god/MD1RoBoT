@@ -49,11 +49,14 @@ impl AppConfig {
         }
 
         let kreza_use_ensemble = settings.get_bool("kreza.use_ensemble").unwrap_or(false);
-        let ensemble_models: Vec<String> = settings.get_array("kreza.ensemble_models")
-            .unwrap_or_default()
-            .iter()
-            .filter_map(|v| v.clone().into_string().ok())
-            .collect();
+        let mut ensemble_models = vec![];
+        if let Ok(arr) = settings.get_array("kreza.ensemble_models") {
+            for val in arr {
+                if let Ok(s) = val.into_string() {
+                    ensemble_models.push(s);
+                }
+            }
+        }
 
         Ok(AppConfig {
             max_cycles,
@@ -61,7 +64,7 @@ impl AppConfig {
             fitness_weights,
             models,
             kreza_use_ensemble,
-            kreza_ensemble_models,
+            kreza_ensemble_models: ensemble_models,
         })
     }
 }
