@@ -35,7 +35,7 @@ fn main() {
     let brain = Brain::new(config.clone());
     let goal_manager = GoalManager::new();
 
-    let mut evo = EvolutionController::new(db.clone(), "./md1robot.lock")
+    let evo = EvolutionController::new(db.clone(), "./md1robot.lock")
         .expect("Failed to initialize EvolutionController");
 
     let mut planner = Planner::new(brain, db, goal_manager, evo, config.clone());
