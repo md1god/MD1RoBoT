@@ -1,6 +1,7 @@
 use rusqlite::{params, Connection, Result};
 use serde::{Deserialize, Serialize};
 use crate::genome::{GenomeNode, GenomeStatus, KnowledgeType, KnowledgeReference};
+use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Fitness {
@@ -24,8 +25,9 @@ pub struct Phenotype {
     pub build_time_ms: u64,
 }
 
+#[derive(Clone)]
 pub struct Db {
-    conn: Connection,
+    conn: Arc<Mutex<Connection>>,
 }
 
 impl Db {
@@ -91,38 +93,45 @@ impl Db {
             INSERT OR IGNORE INTO evolution_state (id, current_generation, best_fitness, best_generation) VALUES (1, 0, 0.0, 0);
             ",
         )?;
-        Ok(Db { conn })
+        Ok(Db { conn: Arc::new(Mutex::new(conn)) })
     }
 
     pub fn load_state(&self) -> (u64, u64, f64) {
-        self.conn.query_row("SELECT generation, age, curiosity FROM state WHERE id = 1", [], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?))).unwrap_or((0,1,1.0))
+        let conn = self.conn.lock().unwrap();
+        conn.query_row("SELECT generation, age, curiosity FROM state WHERE id = 1", [], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?))).unwrap_or((0,1,1.0))
     }
 
     pub fn save_state(&self, gen: u64, age: u64, cur: f64) -> Result<()> {
-        self.conn.execute("INSERT INTO state (id, generation, age, curiosity) VALUES (1, ?1, ?2, ?3) ON CONFLICT(id) DO UPDATE SET generation=excluded.generation, age=excluded.age, curiosity=excluded.curiosity", params![gen, age, cur])?;
+        let conn = self.conn.lock().unwrap();
+        conn.execute("INSERT INTO state (id, generation, age, curiosity) VALUES (1, ?1, ?2, ?3) ON CONFLICT(id) DO UPDATE SET generation=excluded.generation, age=excluded.age, curiosity=excluded.curiosity", params![gen, age, cur])?;
         Ok(())
     }
 
     pub fn add_knowledge(&self, gen: u64, topic: &str, summary: &str) -> Result<()> {
-        self.conn.execute("INSERT INTO knowledge (generation, topic, summary) VALUES (?1, ?2, ?3)", params![gen, topic, summary])?;
+        let conn = self.conn.lock().unwrap();
+        conn.execute("INSERT INTO knowledge (generation, topic, summary) VALUES (?1, ?2, ?3)", params![gen, topic, summary])?;
         Ok(())
     }
 
     pub fn recent_topics(&self, limit: u32) -> Vec<String> {
-        let mut stmt = self.conn.prepare("SELECT topic FROM knowledge ORDER BY id DESC LIMIT ?1").unwrap();
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT topic FROM knowledge ORDER BY id DESC LIMIT ?1").unwrap();
         stmt.query_map(params![limit], |row| row.get::<_,String>(0)).unwrap().filter_map(|r| r.ok()).collect()
     }
 
     pub fn knowledge_count(&self) -> u64 {
-        self.conn.query_row("SELECT COUNT(*) FROM knowledge", [], |row| row.get(0)).unwrap_or(0)
+        let conn = self.conn.lock().unwrap();
+        conn.query_row("SELECT COUNT(*) FROM knowledge", [], |row| row.get(0)).unwrap_or(0)
     }
 
     pub fn get_evolution_state(&self) -> Result<(u64, f64, u64)> {
-        self.conn.query_row("SELECT current_generation, best_fitness, best_generation FROM evolution_state WHERE id = 1", [], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+        let conn = self.conn.lock().unwrap();
+        conn.query_row("SELECT current_generation, best_fitness, best_generation FROM evolution_state WHERE id = 1", [], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
     }
 
     pub fn update_evolution_state(&self, gen: u64, best_fit: f64, best_gen: u64) -> Result<()> {
-        self.conn.execute("UPDATE evolution_state SET current_generation = ?1, best_fitness = ?2, best_generation = ?3 WHERE id = 1", params![gen, best_fit, best_gen])?;
+        let conn = self.conn.lock().unwrap();
+        conn.execute("UPDATE evolution_state SET current_generation = ?1, best_fitness = ?2, best_generation = ?3 WHERE id = 1", params![gen, best_fit, best_gen])?;
         Ok(())
     }
 
@@ -141,10 +150,11 @@ impl Db {
         error_hash: &str,
         errors: &[String],
     ) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
         let f_json = fitness.map(|f| serde_json::to_string(f).unwrap_or_default());
         let p_json = phenotype.map(|p| serde_json::to_string(p).unwrap_or_default());
         let e_json = serde_json::to_string(errors).unwrap_or_default();
-        self.conn.execute("INSERT OR REPLACE INTO mutation_history (experiment_id, generation, target_file, reason, objective, confidence, verdict, fitness_json, phenotype_json, retry_count, error_hash, errors_json) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)", params![experiment_id, generation, target_file, reason, objective, confidence, verdict, f_json, p_json, retry_count, error_hash, e_json])?;
+        conn.execute("INSERT OR REPLACE INTO mutation_history (experiment_id, generation, target_file, reason, objective, confidence, verdict, fitness_json, phenotype_json, retry_count, error_hash, errors_json) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)", params![experiment_id, generation, target_file, reason, objective, confidence, verdict, f_json, p_json, retry_count, error_hash, e_json])?;
         Ok(())
     }
 
@@ -164,31 +174,36 @@ impl Db {
         created_at: u64,
         status: &str,
     ) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
         let files_json = serde_json::to_string(files_changed).unwrap();
         let f_json = serde_json::to_string(fitness).unwrap();
         let p_json = serde_json::to_string(phenotype).unwrap();
         let k_json = serde_json::to_string(knowledge_sources).unwrap();
-        self.conn.execute("INSERT OR REPLACE INTO genome_nodes (id, genome_hash, parent_id, generation, objective, files_changed, patch_hash, patch_path, fitness_json, phenotype_json, knowledge_sources, created_at, status) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)", params![id, genome_hash, parent_id, generation, objective, files_json, patch_hash, patch_path, f_json, p_json, k_json, created_at, status])?;
+        conn.execute("INSERT OR REPLACE INTO genome_nodes (id, genome_hash, parent_id, generation, objective, files_changed, patch_hash, patch_path, fitness_json, phenotype_json, knowledge_sources, created_at, status) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)", params![id, genome_hash, parent_id, generation, objective, files_json, patch_hash, patch_path, f_json, p_json, k_json, created_at, status])?;
         Ok(())
     }
 
     pub fn check_oscillation(&self, error_hash: &str) -> (u32, bool) {
-        let count: u32 = self.conn.query_row("SELECT reject_count FROM oscillation_log WHERE error_hash = ?1", params![error_hash], |row| row.get(0)).unwrap_or(0);
+        let conn = self.conn.lock().unwrap();
+        let count: u32 = conn.query_row("SELECT reject_count FROM oscillation_log WHERE error_hash = ?1", params![error_hash], |row| row.get(0)).unwrap_or(0);
         (count, count >= 3)
     }
 
     pub fn increment_rejection(&self, error_hash: &str) -> Result<()> {
-        self.conn.execute("INSERT INTO oscillation_log (error_hash, reject_count) VALUES (?1, 1) ON CONFLICT(error_hash) DO UPDATE SET reject_count = reject_count + 1", params![error_hash])?;
+        let conn = self.conn.lock().unwrap();
+        conn.execute("INSERT INTO oscillation_log (error_hash, reject_count) VALUES (?1, 1) ON CONFLICT(error_hash) DO UPDATE SET reject_count = reject_count + 1", params![error_hash])?;
         Ok(())
     }
 
     pub fn clear_rejection(&self, error_hash: &str) -> Result<()> {
-        self.conn.execute("DELETE FROM oscillation_log WHERE error_hash = ?1", params![error_hash])?;
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM oscillation_log WHERE error_hash = ?1", params![error_hash])?;
         Ok(())
     }
 
     pub fn get_latest_genome(&self) -> Option<GenomeNode> {
-        let mut stmt = self.conn.prepare("SELECT id, genome_hash, parent_id, generation, objective, files_changed, patch_hash, patch_path, fitness_json, phenotype_json, knowledge_sources, created_at, status FROM genome_nodes WHERE status = 'MERGED' ORDER BY generation DESC LIMIT 1").ok()?;
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT id, genome_hash, parent_id, generation, objective, files_changed, patch_hash, patch_path, fitness_json, phenotype_json, knowledge_sources, created_at, status FROM genome_nodes WHERE status = 'MERGED' ORDER BY generation DESC LIMIT 1").ok()?;
         let row = stmt.query_row([], |row| {
             Ok((
                 row.get::<_,String>(0)?,
@@ -234,7 +249,8 @@ impl Db {
     }
 
     pub fn get_recent_experiments(&self, limit: u32) -> Vec<crate::protocol::ExperimentRecord> {
-        let mut stmt = self.conn.prepare("SELECT experiment_id, generation, target_file, verdict, fitness_json, phenotype_json, error_hash, timestamp FROM mutation_history ORDER BY timestamp DESC LIMIT ?1").unwrap();
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT experiment_id, generation, target_file, verdict, fitness_json, phenotype_json, error_hash, timestamp FROM mutation_history ORDER BY timestamp DESC LIMIT ?1").unwrap();
         let rows = stmt.query_map(params![limit], |row| {
             let f_str: Option<String> = row.get(4)?;
             let p_str: Option<String> = row.get(5)?;
@@ -255,7 +271,8 @@ impl Db {
     }
 
     pub fn get_recent_knowledge(&self, limit: u32) -> Vec<(String, String)> {
-        let mut stmt = self.conn.prepare("SELECT topic, summary FROM knowledge ORDER BY id DESC LIMIT ?1").unwrap();
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT topic, summary FROM knowledge ORDER BY id DESC LIMIT ?1").unwrap();
         let rows = stmt.query_map(params![limit], |row| Ok((row.get::<_,String>(0)?, row.get::<_,String>(1)?))).unwrap();
         rows.filter_map(|r| r.ok()).collect()
     }
