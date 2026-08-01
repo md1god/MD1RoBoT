@@ -23,17 +23,17 @@ impl Seed {
 
         let past_topics = self.db.recent_topics(15);
         let _past_context = if past_topics.is_empty() {
-            "لا توجد معرفة متراكمة بعد.".to_string()
+            "No accumulated knowledge yet.".to_string()
         } else {
-            format!("مواضيع سبق استكشافها: {}", past_topics.join("، "))
+            format!("Previously explored topics: {}", past_topics.join(", "))
         };
 
         let ctx = EvolutionContext::minimal();
         let query_request = ThoughtRequest {
             task_type: TaskType::ResearchTopic,
-            goal: "اختيار موضوع بحث جديد".to_string(),
+            goal: "Select a new research topic".to_string(),
             context: ctx,
-            constraints: vec!["3-6 كلمات".to_string()],
+            constraints: vec!["3-6 words".to_string()],
             agent: AgentRole::Researcher,
             language_hint: None,
         };
@@ -47,16 +47,16 @@ impl Seed {
 
         let results = search::web_search(&query);
         let raw_findings = if results.is_empty() {
-            "لم تظهر أي نتائج.".to_string()
+            "No results found.".to_string()
         } else {
-            results.iter().map(|r| format!("- {}: {} (نص: {})", r.title, r.snippet, r.full_text.as_deref().unwrap_or("لا يوجد"))).collect::<Vec<_>>().join("\n")
+            results.iter().map(|r| format!("- {}: {} (full text: {})", r.title, r.snippet, r.full_text.as_deref().unwrap_or("none"))).collect::<Vec<_>>().join("\n")
         };
 
         let summary_request = ThoughtRequest {
             task_type: TaskType::Summarize,
-            goal: format!("تلخيص نتائج البحث عن {}", query),
+            goal: format!("Summarize search results for {}", query),
             context: EvolutionContext::minimal(),
-            constraints: vec!["3-5 جمل".to_string()],
+            constraints: vec!["3-5 sentences".to_string()],
             agent: AgentRole::Researcher,
             language_hint: None,
         };
@@ -69,7 +69,7 @@ impl Seed {
         let _ = fs::create_dir_all("thoughts");
         let filename = format!("thoughts/discovery_{}.txt", generation);
         let content = format!(
-            "الجيل: {}\nالموضوع: {}\nالملخص: {}\nعدد المعرفة: {}",
+            "Generation: {}\nTopic: {}\nSummary: {}\nKnowledge count: {}",
             generation, query, summary, self.db.knowledge_count()
         );
         fs::write(filename, content).ok();
