@@ -1,4 +1,5 @@
 use crate::ollama_client::OllamaClient;
+use crate::config_loader::AppConfig;
 use std::collections::HashMap;
 
 pub struct ModelRouter {
@@ -6,13 +7,14 @@ pub struct ModelRouter {
 }
 
 impl ModelRouter {
-    pub fn new() -> Self {
+    pub fn new(config: AppConfig) -> Self {
         let mut clients = HashMap::new();
-        // إضافة عدة نماذج محلية متخصصة (يجب أن تكون موجودة في Ollama)
-        clients.insert("rust".into(), OllamaClient::new(Some("deepseek-coder:6.7b")));
-        clients.insert("python".into(), OllamaClient::new(Some("qwen2.5-coder:7b")));
-        clients.insert("javascript".into(), OllamaClient::new(Some("qwen2.5-coder:7b")));
-        clients.insert("default".into(), OllamaClient::new(None)); // استخدام المتغير البيئي أو النموذج الافتراضي
+        for (lang, model) in &config.models {
+            clients.insert(lang.clone(), OllamaClient::new(Some(model)));
+        }
+        if !clients.contains_key("default") {
+            clients.insert("default".into(), OllamaClient::new(Some("qwen2.5-coder:7b")));
+        }
         ModelRouter { clients }
     }
 
