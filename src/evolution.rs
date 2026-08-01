@@ -21,10 +21,10 @@ impl EvolutionController {
         if lock.exists() {
             if let Ok(content) = fs::read_to_string(lock) {
                 if let Ok(info) = serde_json::from_str::<serde_json::Value>(&content) {
-                    if let Some(pid) = info["pid"].as_u64() {
+                    if let Some(_pid) = info["pid"].as_u64() {
                         #[cfg(unix)]
                         {
-                            if unsafe { libc::kill(pid as i32, 0) == 0 } { return false; }
+                            if unsafe { libc::kill(_pid as i32, 0) == 0 } { return false; }
                         }
                     }
                 }
