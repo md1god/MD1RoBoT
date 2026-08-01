@@ -9,6 +9,11 @@ description = "محرك تطور ذاتي متعدد اللغات يعمل مح�
 rusqlite = { version = "0.31", features = ["bundled"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+tree-sitter = "0.22"
+tree-sitter-grammars = "0.1"
+# الإعدادات
+config = "0.13"
+toml = "0.8" 
 
 # التشفير والمعرفات
 sha2 = "0.10"
