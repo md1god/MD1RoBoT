@@ -49,7 +49,6 @@ impl Kreza {
         }
 
         if self.config.kreza_use_ensemble && !self.config.kreza_ensemble_models.is_empty() {
-            // Evaluate with multiple models and average
             let mut total_score = 0.0f32;
             let mut all_verdicts = Vec::new();
             for model in &self.config.kreza_ensemble_models {
@@ -58,7 +57,6 @@ impl Kreza {
                 all_verdicts.push(eval.verdict);
             }
             let avg_score = total_score / self.config.kreza_ensemble_models.len() as f32;
-            // Majority verdict or just use the first? Simplistic: use Approve if any Approve, else use most common.
             let verdict = if all_verdicts.iter().any(|v| matches!(v, Verdict::Approve)) {
                 Verdict::Approve
             } else {
@@ -71,7 +69,8 @@ impl Kreza {
                 fitness_delta: delta,
             };
         } else {
-            let llm_eval = self.llm_evaluation_with_model(brain, proposal, ctx, phenotype, errors, realistic_score, delta, &self.config.models.get("default").cloned().unwrap_or("qwen2.5-coder:7b".into()));
+            let default_model = self.config.models.get("default").cloned().unwrap_or_else(|| "qwen2.5-coder:7b".into());
+            let llm_eval = self.llm_evaluation_with_model(brain, proposal, ctx, phenotype, errors, realistic_score, delta, &default_model);
             let final_score = (realistic_score + llm_eval.score) / 2.0;
             let verdict = llm_eval.verdict;
             let mut metrics = llm_eval.metrics;
@@ -165,7 +164,6 @@ impl Kreza {
             system_context, context_hint, realistic_score
         );
 
-        // Temporarily override the model by sending directly to OllamaClient
         use crate::ollama_client::OllamaClient;
         let client = OllamaClient::new(Some(model_name));
         let response = match client.generate(&prompt) {
