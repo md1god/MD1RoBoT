@@ -9,10 +9,13 @@ pub struct OllamaClient {
 
 impl OllamaClient {
     pub fn new(model_override: Option<&str>) -> Self {
-        let endpoint = env::var("OLLAMA_HOST").unwrap_or_else(|_| "http://localhost:11434".to_string());
+        let endpoint = env::var("OLLAMA_HOST")
+            .unwrap_or_else(|_| "http://localhost:11434".to_string());
         let model = model_override
             .map(|m| m.to_string())
-            .unwrap_or_else(|| env::var("OLLAMA_MODEL").unwrap_or_else(|_| "qwen2.5-coder:7b".to_string()));
+            .unwrap_or_else(|| {
+                env::var("OLLAMA_MODEL").unwrap_or_else(|_| "qwen2.5-coder:14b".to_string())
+            });
         OllamaClient { endpoint, model }
     }
 
@@ -32,17 +35,17 @@ impl OllamaClient {
             Ok(resp) => {
                 let parsed: Value = resp
                     .into_json()
-                    .map_err(|e| format!("فشل تحليل رد Ollama: {e}"))?;
+                    .map_err(|e| format!("Failed to parse Ollama response: {e}"))?;
                 parsed["response"]
                     .as_str()
                     .map(|s| s.trim().to_string())
-                    .ok_or_else(|| "الرد لا يحتوي على نص.".to_string())
+                    .ok_or_else(|| "Response contains no text.".to_string())
             }
             Err(ureq::Error::Status(code, resp)) => {
                 let text = resp.into_string().unwrap_or_default();
-                Err(format!("خطأ Ollama ({code}): {text}"))
+                Err(format!("Ollama error ({code}): {text}"))
             }
-            Err(e) => Err(format!("فشل الاتصال بـ Ollama: {e}")),
+            Err(e) => Err(format!("Failed to connect to Ollama: {e}")),
         }
     }
 }
