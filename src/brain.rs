@@ -1,5 +1,6 @@
 use crate::model_router::ModelRouter;
 use crate::protocol::{EvolutionContext, AgentRole};
+use crate::config_loader::AppConfig;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -19,7 +20,7 @@ pub struct ThoughtRequest {
     pub context: EvolutionContext,
     pub constraints: Vec<String>,
     pub agent: AgentRole,
-    pub language_hint: Option<String>,  // لغة الملف المستهدف (مثلاً "python")
+    pub language_hint: Option<String>,
 }
 
 #[derive(Clone)]
@@ -29,9 +30,9 @@ pub struct Brain {
 }
 
 impl Brain {
-    pub fn new() -> Self {
+    pub fn new(config: AppConfig) -> Self {
         Brain {
-            router: ModelRouter::new(),
+            router: ModelRouter::new(config),
             context_memory: Vec::new(),
         }
     }
@@ -54,7 +55,7 @@ impl Brain {
         let assessment = &ctx.self_assessment;
 
         let state_str = format!(
-            "الجيل: {}، صحة: {:.2}، أضعف نقطة: {}\nالأهداف: {}\nموارد: CPU {:.0}%، ذاكرة متاحة {}MB",
+            "Generation: {}, Health: {:.2}, Weakest point: {}\nGoals: {}\nResources: CPU {:.0}%, Memory available {}MB",
             world.current_generation,
             world.health_score,
             assessment.weakest_point,
@@ -64,9 +65,9 @@ impl Brain {
         );
 
         let memory = self.context_memory.join("\n");
-        let lang_info = req.language_hint.as_ref().map(|l| format!("اللغة المستهدفة: {}", l)).unwrap_or_default();
+        let lang_info = req.language_hint.as_ref().map(|l| format!("Target language: {}", l)).unwrap_or_default();
         format!(
-            "{}\n{}\nالمعرفة السابقة:\n{}\nالقيود: {}\nنفذ المهمة ({:?}) بدقة.",
+            "{}\n{}\nPrior knowledge:\n{}\nConstraints: {}\nExecute task ({:?}) precisely.",
             state_str,
             lang_info,
             memory,
@@ -79,7 +80,7 @@ impl Brain {
         match task {
             TaskType::GenerateMutation | TaskType::EvaluateMutation => {
                 if !response.contains('{') && !response.contains('[') {
-                    return Err("الرد لا يحتوي على JSON".into());
+                    return Err("Response does not contain JSON".into());
                 }
             }
             _ => {}
