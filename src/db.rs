@@ -1,6 +1,6 @@
 use rusqlite::{params, Connection, Result};
 use serde::{Deserialize, Serialize};
-use crate::genome::GenomeNode;
+use crate::genome::{GenomeNode, GenomeStatus, KnowledgeType, KnowledgeReference};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Fitness {
@@ -24,7 +24,6 @@ pub struct Phenotype {
     pub build_time_ms: u64,
 }
 
-#[derive(Clone)]
 pub struct Db {
     conn: Connection,
 }
@@ -212,10 +211,10 @@ impl Db {
         let phenotype: Phenotype = serde_json::from_str(&row.9).ok()?;
         let ks: Vec<String> = serde_json::from_str(&row.10).unwrap_or_default();
         let status = match row.12.as_str() {
-            "MERGED" => crate::genome::GenomeStatus::Merged,
-            "ACTIVE" => crate::genome::GenomeStatus::Active,
-            "REJECTED" => crate::genome::GenomeStatus::Rejected,
-            _ => crate::genome::GenomeStatus::Experimental,
+            "MERGED" => GenomeStatus::Merged,
+            "ACTIVE" => GenomeStatus::Active,
+            "REJECTED" => GenomeStatus::Rejected,
+            _ => GenomeStatus::Experimental,
         };
         Some(GenomeNode {
             id: row.0,
@@ -228,7 +227,7 @@ impl Db {
             patch_path: row.7,
             fitness,
             phenotype,
-            knowledge_sources: ks.into_iter().map(|s| crate::genome::KnowledgeReference { source_id: s.clone(), source_type: crate::genome::KnowledgeType::Unknown, confidence: 0.5 }).collect(),
+            knowledge_sources: ks.into_iter().map(|s| KnowledgeReference { source_id: s.clone(), source_type: KnowledgeType::Unknown, confidence: 0.5 }).collect(),
             created_at: row.11,
             status,
         })
