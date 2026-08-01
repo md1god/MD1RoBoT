@@ -3,7 +3,6 @@ use crate::db::Db;
 use crate::search;
 use crate::protocol::{AgentRole, EvolutionContext};
 use std::fs;
-use std::path::Path;
 
 pub struct Seed {
     pub db: Db,
@@ -46,7 +45,7 @@ impl Seed {
         if query.is_empty() { return; }
 
         let results = search::web_search(&query);
-        let raw_findings = if results.is_empty() {
+        let _raw_findings = if results.is_empty() {
             "No results found.".to_string()
         } else {
             results.iter().map(|r| format!("- {}: {} (full text: {})", r.title, r.snippet, r.full_text.as_deref().unwrap_or("none"))).collect::<Vec<_>>().join("\n")
