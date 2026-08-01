@@ -1,131 +1,156 @@
-use crate::brain::Brain;
-use crate::db::{Db, Fitness};
-use crate::goal_manager::GoalManager;
-use crate::evolution::EvolutionController;
-use crate::context_builder::ContextBuilder;
-use crate::crazy::Crazy;
-use crate::kreza::Kreza;
-use crate::evolution_lab::EvolutionLab;
-use crate::protocol::{Verdict, Evaluation, Suggestion};
-use std::time::{SystemTime, UNIX_EPOCH};
-use uuid::Uuid;
+use serde::{Deserialize, Serialize};
+use crate::db::{Fitness, Phenotype};
+use crate::genome::{GenomeNode, GenomeStatus, KnowledgeReference};
 
-pub struct Planner {
-    brain: Brain,
-    db: Db,
-    goal_manager: GoalManager,
-    pub evo: EvolutionController,
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum AgentRole {
+    Crazy,
+    Kreza,
+    Researcher,
+    Tester,
 }
 
-impl Planner {
-    pub fn new(brain: Brain, db: Db, goal_manager: GoalManager, evo: EvolutionController) -> Self {
-        Planner { brain, db, goal_manager, evo }
-    }
-
-    pub fn run_cycle(&mut self) -> Result<(), String> {
-        let ctx_builder = ContextBuilder::new(self.db.clone(), self.goal_manager.clone());
-        let ctx = ctx_builder.build();
-
-        let default_lang = ctx.current_genome.as_ref()
-            .and_then(|g| g.files_changed.first().map(|f| detect_language(f)))
-            .unwrap_or_else(|| "rust".to_string());
-
-        let proposals = Crazy::propose_mutations(&mut self.brain, &ctx, 5)?;
-
-        let mut best_score = 0.0;
-        let mut best_plan: Option<(Suggestion, Evaluation, crate::db::Phenotype)> = None;
-
-        for prop in proposals {
-            let sug = &prop.suggestion;
-            let (lab_ok, pheno_opt, errors) = EvolutionLab::run_experiment(".", sug)?;
-            let evaluation = Kreza::evaluate(&mut self.brain, &prop, &ctx, pheno_opt.as_ref(), &errors);
-            let error_hash = EvolutionController::hash_mutation(&sug.file_path, &sug.original_snippet, &sug.new_snippet);
-
-            match &evaluation.verdict {
-                Verdict::Approve => {
-                    if evaluation.score > best_score {
-                        if let Some(pheno) = pheno_opt {
-                            best_score = evaluation.score;
-                            best_plan = Some((sug.clone(), evaluation, pheno));
-                        }
-                    }
-                }
-                Verdict::Reject { reason } => {
-                    self.evo.record_rejection(
-                        &sug.id, self.evo.current_generation(), &sug.file_path,
-                        &sug.reason, &sug.objective, sug.confidence,
-                        &error_hash, &errors,
-                    )?;
-                    let (_, oscillating) = self.evo.check_oscillation(&error_hash);
-                    if oscillating {
-                        println!("Oscillation detected: {}. Consider changing the objective.", reason);
-                    }
-                }
-                Verdict::Modify { suggestion } => {
-                    println!("Modification suggested by Kreza: {}", suggestion);
-                    self.evo.record_rejection(&sug.id, self.evo.current_generation(), &sug.file_path, &sug.reason, &sug.objective, sug.confidence, &error_hash, &errors)?;
-                }
-                Verdict::NeedsMoreResearch { reason } => {
-                    println!("Kreza requests more research: {}", reason);
-                }
-                Verdict::NeedsExperiment { reason } => {
-                    println!("Kreza requests additional experiments: {}", reason);
-                }
-                Verdict::Rollback { reason } => {
-                    println!("Kreza requests rollback: {}", reason);
-                }
-            }
-        }
-
-        if let Some((sug, eval, pheno)) = best_plan {
-            let target_file = &sug.file_path;
-            let original_content = std::fs::read_to_string(target_file)
-                .map_err(|e| format!("Failed to read original file: {e}"))?;
-            let new_content = original_content.replace(&sug.original_snippet, &sug.new_snippet);
-            let backup = format!("{}.bak", target_file);
-            std::fs::copy(target_file, &backup).ok();
-            std::fs::write(target_file, new_content).map_err(|e| format!("Failed to write mutation: {e}"))?;
-
-            let new_gen = self.evo.increment_generation()?;
-            let fitness = Fitness {
-                performance: if pheno.error_rate == 0.0 { 0.9 } else { 0.5 },
-                memory: 0.8,
-                reliability: if pheno.error_rate == 0.0 { 1.0 } else { 0.0 },
-                maintainability: 0.7,
-            };
-            self.evo.update_best_fitness(new_gen, fitness.overall())?;
-
-            let error_hash = EvolutionController::hash_mutation(&sug.file_path, &sug.original_snippet, &sug.new_snippet);
-            self.evo.record_success(
-                &sug.id, new_gen, &sug.file_path,
-                &sug.reason, &sug.objective, sug.confidence,
-                &fitness, &pheno, &error_hash,
-            )?;
-
-            let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
-            let genome_id = Uuid::new_v4().to_string();
-            let genome_hash = hex::encode(sha2::Sha256::digest(new_content.as_bytes()));
-            self.db.insert_genome_node(
-                &genome_id, &genome_hash, None, new_gen, &sug.objective,
-                &[sug.file_path.clone()], &error_hash, "", &fitness, &pheno,
-                &vec!["experiment".to_string()],
-                now, "MERGED",
-            ).map_err(|e| e.to_string())?;
-
-            println!("Mutation merged. Generation: {}", new_gen);
-        } else {
-            println!("No acceptable mutation this cycle.");
-        }
-
-        Ok(())
-    }
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Suggestion {
+    pub id: String,
+    pub agent: AgentRole,
+    pub generation: u64,
+    pub file_path: String,
+    pub language: String,
+    pub original_snippet: String,
+    pub new_snippet: String,
+    pub reason: String,
+    pub objective: String,
+    pub confidence: f32,
+    pub priority: f32,
+    pub risk: f32,
+    pub expected_gain: String,
 }
 
-fn detect_language(file_path: &str) -> String {
-    if file_path.ends_with(".rs") { "rust".into() }
-    else if file_path.ends_with(".py") { "python".into() }
-    else if file_path.ends_with(".js") || file_path.ends_with(".ts") { "javascript".into() }
-    else if file_path.ends_with(".c") || file_path.ends_with(".h") { "c".into() }
-    else if file_path.ends_with(".cpp") || file_path.ends_with(".hpp") { "cpp".into() }
-    else { "unknown".into() }
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MutationProposal {
+    pub suggestion: Suggestion,
+    pub hypothesis: String,
+    pub expected_fitness_gain: f64,
+    pub risk: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum Verdict {
+    Approve,
+    Reject { reason: String },
+    Modify { suggestion: String },
+    NeedsMoreResearch { reason: String },
+    NeedsExperiment { reason: String },
+    Rollback { reason: String },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Evaluation {
+    pub verdict: Verdict,
+    pub score: f32,
+    pub metrics: Vec<String>,
+    pub fitness_delta: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorldState {
+    pub total_files: usize,
+    pub modules: usize,
+    pub lines_of_code: usize,
+    pub test_coverage: f64,
+    pub current_generation: u64,
+    pub active_branch: String,
+    pub health_score: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResourceState {
+    pub cpu_usage_percent: f64,
+    pub memory_available_mb: u64,
+    pub disk_free_gb: u64,
+    pub network_connected: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ActiveTasks {
+    pub searching: bool,
+    pub evolving: bool,
+    pub testing: bool,
+    pub waiting: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SelfAssessment {
+    pub weakest_point: String,
+    pub improvement_score: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KnowledgeItem {
+    pub id: String,
+    pub topic: String,
+    pub summary: String,
+    pub source_type: String,
+    pub confidence: f32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExperimentRecord {
+    pub experiment_id: String,
+    pub generation: u64,
+    pub file_path: String,
+    pub verdict: String,
+    pub fitness: Option<Fitness>,
+    pub phenotype: Option<Phenotype>,
+    pub error_hash: String,
+    pub timestamp: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EvolutionContext {
+    pub world_state: WorldState,
+    pub current_genome: Option<GenomeNode>,
+    pub goals: Vec<String>,
+    pub recent_experiments: Vec<ExperimentRecord>,
+    pub knowledge_base: Vec<KnowledgeItem>,
+    pub resource_state: ResourceState,
+    pub active_tasks: ActiveTasks,
+    pub self_assessment: SelfAssessment,
+}
+
+impl EvolutionContext {
+    pub fn minimal() -> Self {
+        EvolutionContext {
+            world_state: WorldState {
+                total_files: 0,
+                modules: 0,
+                lines_of_code: 0,
+                test_coverage: 0.0,
+                current_generation: 0,
+                active_branch: "main".into(),
+                health_score: 1.0,
+            },
+            current_genome: None,
+            goals: vec![],
+            recent_experiments: vec![],
+            knowledge_base: vec![],
+            resource_state: ResourceState {
+                cpu_usage_percent: 0.0,
+                memory_available_mb: 0,
+                disk_free_gb: 0,
+                network_connected: true,
+            },
+            active_tasks: ActiveTasks {
+                searching: false,
+                evolving: false,
+                testing: false,
+                waiting: false,
+            },
+            self_assessment: SelfAssessment {
+                weakest_point: "غير معروف".into(),
+                improvement_score: 0.0,
+            },
+        }
+    }
 }
