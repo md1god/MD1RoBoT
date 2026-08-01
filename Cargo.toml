@@ -1,11 +1,41 @@
 [package]
-name = "genesis_core"
-version = "0.8.0"
+name = "md1robot"
+version = "0.1.0"
 edition = "2021"
+description = "محرك تطور ذاتي متعدد اللغات يعمل محلياً"
 
 [dependencies]
+# قاعدة البيانات والتخزين
 rusqlite = { version = "0.31", features = ["bundled"] }
+serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+
+# التشفير والمعرفات
 sha2 = "0.10"
 uuid = { version = "1", features = ["v4"] }
+hex = "0.4"
+
+# الاتصال بالشبكة (للبحث و Ollama)
 ureq = { version = "2", features = ["json"] }
+
+# أدوات تحليل النصوص والـ HTML (للبحث)
+scraper = "0.18"
+url = "2.5"
+
+# تشغيل أوامر النظام والتحكم بالعمليات
+# (Rust std::process يكفي عادة لكن قد نضيف لمرونة)
+which = "6.0"       # لاكتشاف وجود أدوات البناء (python, node, gcc, ...)
+
+# تحليل الكود متعدد اللغات
+tree-sitter = "0.22"           # مكتبة parsing
+tree-sitter-grammars = "0.1"   # مجموعة قواعد جاهزة (اختياري)
+
+# أدوات إضافية (اختيارية للمستقبل)
+serde_yaml = "0.9"     # لقراءة إعدادات دمج النماذج
+toml = "0.8"           # لقراءة إعدادات المشروع
+log = "0.4"            # تسجيل الأحداث
+env_logger = "0.10"    # عرض السجلات
+
+[dev-dependencies]
+# للاختبارات فقط
+tempfile = "3.8"
