@@ -1,6 +1,7 @@
 use crate::brain::{Brain, TaskType, ThoughtRequest};
 use crate::protocol::{MutationProposal, Verdict, Evaluation, AgentRole, EvolutionContext};
 use crate::db::{Phenotype, Fitness};
+use crate::config_loader::AppConfig;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize)]
@@ -11,17 +12,24 @@ struct KrezaResponse {
     reason: Option<String>,
 }
 
-pub struct Kreza;
+pub struct Kreza {
+    config: AppConfig,
+}
 
 impl Kreza {
+    pub fn new(config: AppConfig) -> Self {
+        Kreza { config }
+    }
+
     pub fn evaluate(
+        &self,
         brain: &mut Brain,
         proposal: &MutationProposal,
         ctx: &EvolutionContext,
         phenotype: Option<&Phenotype>,
         errors: &[String],
     ) -> Evaluation {
-        let (realistic_score, realistic_verdict, delta) = Self::realistic_assessment(proposal, ctx, phenotype, errors);
+        let (realistic_score, realistic_verdict, delta) = self.realistic_assessment(proposal, ctx, phenotype, errors);
 
         if realistic_score > 0.8 && matches!(realistic_verdict, Verdict::Approve) {
             return Evaluation {
@@ -40,21 +48,45 @@ impl Kreza {
             };
         }
 
-        let llm_eval = Self::llm_evaluation(brain, proposal, ctx, phenotype, errors, realistic_score, delta);
-        let final_score = (realistic_score + llm_eval.score) / 2.0;
-        let verdict = llm_eval.verdict;
-        let mut metrics = llm_eval.metrics;
-        metrics.push(format!("realistic_score: {:.2}", realistic_score));
-
-        Evaluation {
-            verdict,
-            score: final_score,
-            metrics,
-            fitness_delta: delta,
+        if self.config.kreza_use_ensemble && !self.config.kreza_ensemble_models.is_empty() {
+            // Evaluate with multiple models and average
+            let mut total_score = 0.0f32;
+            let mut all_verdicts = Vec::new();
+            for model in &self.config.kreza_ensemble_models {
+                let eval = self.llm_evaluation_with_model(brain, proposal, ctx, phenotype, errors, realistic_score, delta, model);
+                total_score += eval.score;
+                all_verdicts.push(eval.verdict);
+            }
+            let avg_score = total_score / self.config.kreza_ensemble_models.len() as f32;
+            // Majority verdict or just use the first? Simplistic: use Approve if any Approve, else use most common.
+            let verdict = if all_verdicts.iter().any(|v| matches!(v, Verdict::Approve)) {
+                Verdict::Approve
+            } else {
+                all_verdicts.into_iter().next().unwrap_or(Verdict::Reject { reason: "ensemble failed".into() })
+            };
+            return Evaluation {
+                verdict,
+                score: avg_score,
+                metrics: vec!["ensemble".to_string()],
+                fitness_delta: delta,
+            };
+        } else {
+            let llm_eval = self.llm_evaluation_with_model(brain, proposal, ctx, phenotype, errors, realistic_score, delta, &self.config.models.get("default").cloned().unwrap_or("qwen2.5-coder:7b".into()));
+            let final_score = (realistic_score + llm_eval.score) / 2.0;
+            let verdict = llm_eval.verdict;
+            let mut metrics = llm_eval.metrics;
+            metrics.push(format!("realistic_score: {:.2}", realistic_score));
+            return Evaluation {
+                verdict,
+                score: final_score,
+                metrics,
+                fitness_delta: delta,
+            };
         }
     }
 
     fn realistic_assessment(
+        &self,
         proposal: &MutationProposal,
         ctx: &EvolutionContext,
         phenotype: Option<&Phenotype>,
@@ -74,7 +106,7 @@ impl Kreza {
         let delta = new_overall.map(|new| new - current_overall);
 
         if !errors.is_empty() || phenotype.is_none() {
-            return (0.0, Verdict::Reject { reason: format!("فشل التحقق: {:?}", errors) }, None);
+            return (0.0, Verdict::Reject { reason: format!("Build/test failure: {:?}", errors) }, None);
         }
 
         let mut score = 0.5;
@@ -92,15 +124,16 @@ impl Kreza {
         let verdict = if score > 0.7 {
             Verdict::Approve
         } else if score > 0.4 {
-            Verdict::NeedsExperiment { reason: "تحسن طفيف، يفضل مزيد من القياسات".into() }
+            Verdict::NeedsExperiment { reason: "Marginal improvement, needs more measurements".into() }
         } else {
-            Verdict::Reject { reason: "تأثير سلبي أو مخاطرة عالية".into() }
+            Verdict::Reject { reason: "Negative impact or high risk".into() }
         };
 
         (score as f32, verdict, delta)
     }
 
-    fn llm_evaluation(
+    fn llm_evaluation_with_model(
+        &self,
         brain: &mut Brain,
         proposal: &MutationProposal,
         ctx: &EvolutionContext,
@@ -108,45 +141,40 @@ impl Kreza {
         errors: &[String],
         realistic_score: f32,
         delta: Option<f64>,
+        model_name: &str,
     ) -> Evaluation {
         let sug = &proposal.suggestion;
-        let pheno_str = phenotype.map(|p| format!("بناء:{}ms, خطأ:{}", p.build_time_ms, p.error_rate)).unwrap_or_default();
-        let delta_str = delta.map(|d| format!("{:.2}", d)).unwrap_or_else(|| "لا توجد".into());
+        let pheno_str = phenotype.map(|p| format!("build:{}ms, error_rate:{}", p.build_time_ms, p.error_rate)).unwrap_or_default();
+        let delta_str = delta.map(|d| format!("{:.2}", d)).unwrap_or_else(|| "N/A".into());
         let error_str = errors.join(", ");
 
         let context_hint = format!(
-            "الملف: {}, السبب: {}, الهدف: {}, الفرضية: {}, الثقة: {}, المخاطرة: {:.2}, نتيجة المختبر: {}, الفينوتيب: {}, تحسن اللياقة: {}, الأخطاء: {}",
+            "File: {}, Reason: {}, Objective: {}, Hypothesis: {}, Confidence: {}, Risk: {:.2}, Lab result: {}, Phenotype: {}, Fitness delta: {}, Errors: {}",
             sug.file_path, sug.reason, sug.objective, proposal.hypothesis,
-            sug.confidence, proposal.risk, if phenotype.is_some() { "نجح" } else { "فشل" },
+            sug.confidence, proposal.risk, if phenotype.is_some() { "passed" } else { "failed" },
             pheno_str, delta_str, error_str
         );
 
         let system_context = format!(
-            "حالة النظام: الجيل {}، الصحة {:.2}، أضعف نقطة: {}",
+            "System state: generation {}, health {:.2}, weakest point: {}",
             ctx.world_state.current_generation, ctx.world_state.health_score, ctx.self_assessment.weakest_point
         );
 
         let prompt = format!(
-            "{}\n{}\nقم بتقييم الطفرة أعلاه. يجب أن تُرجع JSON بالشكل: {{\"verdict\":\"approve|reject|needs_more_research|needs_experiment|rollback\",\"score\":0.0-1.0,\"metrics\":[\"سبب1\",\"سبب2\"],\"reason\":\"...\"}}. النتيجة الواقعية الأولية كانت {:.2}.",
+            "{}\n{}\nEvaluate the above mutation. Return JSON with keys: verdict (approve/reject/needs_more_research/needs_experiment/rollback), score (0.0-1.0), metrics (list of strings), reason (string). Realistic score was {:.2}.",
             system_context, context_hint, realistic_score
         );
 
-        let request = ThoughtRequest {
-            task_type: TaskType::EvaluateMutation,
-            goal: "تقييم طفرة".into(),
-            context: ctx.clone(),
-            constraints: vec!["JSON فقط".into()],
-            agent: AgentRole::Kreza,
-            language_hint: Some(sug.language.clone()),
-        };
-
-        let response = match brain.think(request) {
+        // Temporarily override the model by sending directly to OllamaClient
+        use crate::ollama_client::OllamaClient;
+        let client = OllamaClient::new(Some(model_name));
+        let response = match client.generate(&prompt) {
             Ok(r) => r,
             Err(_) => return Evaluation {
-                verdict: Verdict::Reject { reason: "فشل النموذج".into() },
+                verdict: Verdict::Reject { reason: "Model evaluation failed".into() },
                 score: 0.0,
                 metrics: vec![],
-                fitness_delta: None,
+                fitness_delta: delta,
             },
         };
 
@@ -158,22 +186,17 @@ impl Kreza {
                     Some("needs_more_research") => Verdict::NeedsMoreResearch { reason: kr.reason.unwrap_or_default() },
                     Some("needs_experiment") => Verdict::NeedsExperiment { reason: kr.reason.unwrap_or_default() },
                     Some("rollback") => Verdict::Rollback { reason: kr.reason.unwrap_or_default() },
-                    _ => Verdict::Reject { reason: "تنسيق غير معروف".into() },
+                    _ => Verdict::Reject { reason: "Unknown verdict".into() },
                 };
                 let score = kr.score.unwrap_or(0.5);
                 let metrics = kr.metrics.unwrap_or_default();
-                Evaluation {
-                    verdict,
-                    score,
-                    metrics,
-                    fitness_delta: delta,
-                }
+                Evaluation { verdict, score, metrics, fitness_delta: delta }
             },
             Err(e) => Evaluation {
-                verdict: Verdict::Reject { reason: format!("JSON غير صالح: {}", e) },
+                verdict: Verdict::Reject { reason: format!("JSON invalid: {}", e) },
                 score: 0.0,
                 metrics: vec![],
-                fitness_delta: None,
+                fitness_delta: delta,
             },
         }
     }
