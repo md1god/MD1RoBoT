@@ -1,7 +1,6 @@
 use crate::db::Db;
-use crate::goals::GoalManager;
+use crate::goal_manager::GoalManager;
 use crate::protocol::{EvolutionContext, WorldState, ResourceState, ActiveTasks, SelfAssessment, KnowledgeItem, ExperimentRecord};
-use crate::genome::GenomeNode;
 
 pub struct ContextBuilder {
     db: Db,
@@ -17,7 +16,7 @@ impl ContextBuilder {
         let (gen, best_fitness, _) = self.db.get_evolution_state().unwrap_or((0, 0.0, 0));
 
         let world = WorldState {
-            total_files: 15, // يمكن حسابه ديناميكياً
+            total_files: 15,
             modules: 7,
             lines_of_code: 0,
             test_coverage: 0.0,
@@ -58,7 +57,7 @@ impl ContextBuilder {
         };
 
         let assessment = SelfAssessment {
-            weakest_point: "جودة الاقتراحات".to_string(),
+            weakest_point: "mutation quality".to_string(),
             improvement_score: best_fitness,
         };
 
