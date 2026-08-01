@@ -1,0 +1,15 @@
+name: Deploy Code to Cloud Training
+on:
+  push:
+    branches: [ main ] # يشتغل تلقائياً عند تحديث الأكواد
+
+jobs:
+  trigger-cloud:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Run Cargo Test
+      run: |
+        cargo test --verbose # التأكد من أن كودك الجديد سليم هندسياً قبل التدريب
