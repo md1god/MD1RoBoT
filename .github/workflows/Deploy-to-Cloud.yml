@@ -1,15 +1,41 @@
-name: Deploy Code to Cloud Training
+name: Trigger Cloud Training (Gigal/Colab)
+
 on:
   push:
-    branches: [ main ] # يشتغل تلقائياً عند تحديث الأكواد
+    branches: [ main ]
+  workflow_dispatch:      # إمكانية التشغيل اليدوي
 
 jobs:
-  trigger-cloud:
+  test-and-deploy:
     runs-on: ubuntu-latest
     steps:
-    - name: Checkout Code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Run Cargo Test
-      run: |
-        cargo test --verbose # التأكد من أن كودك الجديد سليم هندسياً قبل التدريب
+      - name: Run cargo tests
+        run: cargo test --verbose
+
+      - name: Trigger training on Gigal
+        if: success()   # يشغّل فقط إذا نجحت الاختبارات
+        env:
+          GIGAL_API_KEY: ${{ secrets.GIGAL_API_KEY }}
+        run: |
+          # افترض أن لديك سكريبت تدريب جاهز يتم إرساله
+          curl -X POST "https://api.gigal.ai/train" \
+            -H "Authorization: Bearer $GIGAL_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "image": "ghcr.io/'"${{ github.repository }}"':latest",
+              "command": "./target/release/md1robot --train",
+              "gpu": true,
+              "timeout_minutes": 60
+            }'
+
+      - name: Trigger training on Google Colab (بديل)
+        if: success() && false  # معطل افتراضياً، أزِل 'false' للتفعيل
+        env:
+          COLAB_WEBHOOK_URL: ${{ secrets.COLAB_WEBHOOK_URL }}
+        run: |
+          curl -X POST "$COLAB_WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -d '{"repository": "${{ github.repository }}", "ref": "${{ github.sha }}"}'
