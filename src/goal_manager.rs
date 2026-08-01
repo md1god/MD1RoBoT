@@ -1,3 +1,4 @@
+#[derive(Clone)]
 pub struct GoalManager;
 
 impl GoalManager {
