@@ -4,10 +4,10 @@ mod db;
 mod search;
 mod seed;
 mod protocol;
-mod context_builder;      // كان context
-mod evolution;           // لا تغيير
-mod evolution_lab;       // كان lab
-mod goals;               // كان goal_manager لكننا سنحتفظ بالاسم goals للملف goal_manager.rs؟ 
+mod context_builder;
+mod evolution;
+mod evolution_lab;
+mod goal_manager;        // هذا هو اسم الملف الحقيقي
 mod planner;
 mod crazy;
 mod kreza;
@@ -22,7 +22,7 @@ use db::Db;
 use brain::Brain;
 use evolution::EvolutionController;
 use planner::Planner;
-use goals::GoalManager;
+use goal_manager::GoalManager;
 
 fn main() {
     println!("🌱 MD1RoBoT — المحرك متعدد اللغات للتطور الذاتي");
