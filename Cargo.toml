@@ -5,39 +5,21 @@ edition = "2021"
 description = "محرك تطور ذاتي متعدد اللغات يعمل محلياً"
 
 [dependencies]
-# قاعدة البيانات والتخزين
 rusqlite = { version = "0.31", features = ["bundled"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-tree-sitter = "0.22"
-tree-sitter-grammars = "0.1"
-# الإعدادات
-config = "0.13"
-toml = "0.8" 
-
-# التشفير والمعرفات
 sha2 = "0.10"
 uuid = { version = "1", features = ["v4"] }
 hex = "0.4"
 blake3 = "1.5"
-
-# الاتصال بالشبكة
 ureq = { version = "2", features = ["json"] }
-
-# أدوات تحليل النصوص والـ HTML
 scraper = "0.18"
 url = "2.5"
-
-# أدوات النظام
 which = "6.0"
 libc = "0.2"
-
-# تحليل الكود متعدد اللغات
 tree-sitter = "0.22"
 tree-sitter-grammars = "0.1"
-
-# أدوات إضافية
-serde_yaml = "0.9"
+config = "0.13"
 toml = "0.8"
 log = "0.4"
 env_logger = "0.10"
