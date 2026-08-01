@@ -14,28 +14,28 @@ serde_json = "1.0"
 sha2 = "0.10"
 uuid = { version = "1", features = ["v4"] }
 hex = "0.4"
+blake3 = "1.5"
 
-# الاتصال بالشبكة (للبحث و Ollama)
+# الاتصال بالشبكة
 ureq = { version = "2", features = ["json"] }
 
-# أدوات تحليل النصوص والـ HTML (للبحث)
+# أدوات تحليل النصوص والـ HTML
 scraper = "0.18"
 url = "2.5"
 
-# تشغيل أوامر النظام والتحكم بالعمليات
-# (Rust std::process يكفي عادة لكن قد نضيف لمرونة)
-which = "6.0"       # لاكتشاف وجود أدوات البناء (python, node, gcc, ...)
+# أدوات النظام
+which = "6.0"
+libc = "0.2"
 
 # تحليل الكود متعدد اللغات
-tree-sitter = "0.22"           # مكتبة parsing
-tree-sitter-grammars = "0.1"   # مجموعة قواعد جاهزة (اختياري)
+tree-sitter = "0.22"
+tree-sitter-grammars = "0.1"
 
-# أدوات إضافية (اختيارية للمستقبل)
-serde_yaml = "0.9"     # لقراءة إعدادات دمج النماذج
-toml = "0.8"           # لقراءة إعدادات المشروع
-log = "0.4"            # تسجيل الأحداث
-env_logger = "0.10"    # عرض السجلات
+# أدوات إضافية
+serde_yaml = "0.9"
+toml = "0.8"
+log = "0.4"
+env_logger = "0.10"
 
 [dev-dependencies]
-# للاختبارات فقط
 tempfile = "3.8"
