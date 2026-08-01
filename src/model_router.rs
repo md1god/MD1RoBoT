@@ -2,6 +2,7 @@ use crate::ollama_client::OllamaClient;
 use crate::config_loader::AppConfig;
 use std::collections::HashMap;
 
+#[derive(Clone)]
 pub struct ModelRouter {
     clients: HashMap<String, OllamaClient>,
 }
