@@ -1,13 +1,12 @@
 use crate::brain::Brain;
-use crate::db::Db;
-use crate::goals::GoalManager;
+use crate::db::{Db, Fitness};
+use crate::goal_manager::GoalManager;
 use crate::evolution::EvolutionController;
-use crate::context::ContextBuilder;
+use crate::context_builder::ContextBuilder;
 use crate::crazy::Crazy;
 use crate::kreza::Kreza;
-use crate::lab::EvolutionLab;
+use crate::evolution_lab::EvolutionLab;
 use crate::protocol::{Verdict, Evaluation, Suggestion};
-use crate::db::Fitness;
 use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
 
@@ -27,10 +26,9 @@ impl Planner {
         let ctx_builder = ContextBuilder::new(self.db.clone(), self.goal_manager.clone());
         let ctx = ctx_builder.build();
 
-        // نحتاج إلى اكتشاف اللغة المستهدفة من الجينوم الحالي أو ملفات المشروع
         let default_lang = ctx.current_genome.as_ref()
             .and_then(|g| g.files_changed.first().map(|f| detect_language(f)))
-            .unwrap_or("rust".to_string());
+            .unwrap_or_else(|| "rust".to_string());
 
         let proposals = Crazy::propose_mutations(&mut self.brain, &ctx, 5)?;
 
@@ -60,21 +58,21 @@ impl Planner {
                     )?;
                     let (_, oscillating) = self.evo.check_oscillation(&error_hash);
                     if oscillating {
-                        println!("تذبذب: {}. يُنصح بتغيير الهدف.", reason);
+                        println!("Oscillation detected: {}. Consider changing the objective.", reason);
                     }
                 }
                 Verdict::Modify { suggestion } => {
-                    println!("اقتراح تعديل من Kreza: {}", suggestion);
+                    println!("Modification suggested by Kreza: {}", suggestion);
                     self.evo.record_rejection(&sug.id, self.evo.current_generation(), &sug.file_path, &sug.reason, &sug.objective, sug.confidence, &error_hash, &errors)?;
                 }
                 Verdict::NeedsMoreResearch { reason } => {
-                    println!("🔬 Kreza يطلب المزيد من البحث: {}", reason);
+                    println!("Kreza requests more research: {}", reason);
                 }
                 Verdict::NeedsExperiment { reason } => {
-                    println!("🧪 Kreza يطلب تجارب إضافية: {}", reason);
+                    println!("Kreza requests additional experiments: {}", reason);
                 }
                 Verdict::Rollback { reason } => {
-                    println!("⏪ Kreza يطلب تراجعاً: {}", reason);
+                    println!("Kreza requests rollback: {}", reason);
                 }
             }
         }
@@ -82,11 +80,11 @@ impl Planner {
         if let Some((sug, eval, pheno)) = best_plan {
             let target_file = &sug.file_path;
             let original_content = std::fs::read_to_string(target_file)
-                .map_err(|e| format!("فشل قراءة الملف الأصلي: {e}"))?;
+                .map_err(|e| format!("Failed to read original file: {e}"))?;
             let new_content = original_content.replace(&sug.original_snippet, &sug.new_snippet);
             let backup = format!("{}.bak", target_file);
             std::fs::copy(target_file, &backup).ok();
-            std::fs::write(target_file, new_content).map_err(|e| format!("فشل كتابة التعديل: {e}"))?;
+            std::fs::write(target_file, new_content).map_err(|e| format!("Failed to write mutation: {e}"))?;
 
             let new_gen = self.evo.increment_generation()?;
             let fitness = Fitness {
@@ -114,9 +112,9 @@ impl Planner {
                 now, "MERGED",
             ).map_err(|e| e.to_string())?;
 
-            println!("✅ طفرة مدمجة. الجيل: {}", new_gen);
+            println!("Mutation merged. Generation: {}", new_gen);
         } else {
-            println!("📛 لا توجد طفرة مقبولة هذه الدورة.");
+            println!("No acceptable mutation this cycle.");
         }
 
         Ok(())
