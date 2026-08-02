@@ -63,11 +63,12 @@ jobs:
 
       - name: Pull and run genesis core container
         run: |
-          # تسجيل دخول صريح للدوكر دايموند قبل السحب عشان يتجاوز مشكلة الـ Private
           echo "${{ secrets.DOCKER_PAT }}" | docker login -u "dido599999" --password-stdin
           docker pull "${GENESIS_IMAGE}"
           docker run --rm \
             -v "${{ github.workspace }}:/app" \
             -w /app \
             --user "$(id -u):$(id -g)" \
+            -e HOME=/app \
+            -e OLLAMA_MODELS=/app/.ollama \
             "${GENESIS_IMAGE}"
