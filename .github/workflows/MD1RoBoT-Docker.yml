@@ -49,23 +49,24 @@ jobs:
           reliability = 0.30
           maintainability = 0.15
           [models]
-          rust = "deepseek-r1:7b"
-          python = "deepseek-r1:7b"
-          javascript = "deepseek-r1:7b"
-          c = "deepseek-r1:7b"
-          cpp = "deepseek-r1:7b"
-          default = "deepseek-r1:7b"
+          rust = "deepseek-coder:6.7b"
+          python = "qwen2.5-coder:7b"
+          javascript = "qwen2.5-coder:7b"
+          c = "deepseek-coder:6.7b"
+          cpp = "deepseek-coder:6.7b"
+          default = "qwen2.5-coder:7b"
           [kreza]
           use_ensemble = false
-          ensemble_models = ["deepseek-r1:7b"]
+          ensemble_models = ["qwen2.5-coder:7b", "deepseek-coder:6.7b"]
           EOF
 
-      - name: Set up Ollama on Runner
+      - name: Set up Ollama on Runner and Pull Models
         run: |
           curl -fsSL https://ollama.com/install.sh | sh
           ollama serve &
           sleep 5
-          ollama pull deepseek-r1:7b
+          ollama pull deepseek-coder:6.7b
+          ollama pull qwen2.5-coder:7b
 
       - name: Pull and run genesis core container
         run: |
