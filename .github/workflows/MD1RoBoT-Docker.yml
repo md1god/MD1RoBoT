@@ -14,7 +14,7 @@ jobs:
     timeout-minutes: 60
 
     env:
-      GENESIS_IMAGE: dido599999/genesis-core:${{ github.sha }}
+      GENESIS_IMAGE: dido599999/genesis-core:latest
 
     steps:
       - name: Checkout repository
@@ -36,7 +36,6 @@ jobs:
           push: true
           tags: |
             dido599999/genesis-core:latest
-            dido599999/genesis-core:${{ github.sha }}
 
       - name: Create configuration file
         run: |
