@@ -70,5 +70,7 @@ jobs:
             --user "$(id -u):$(id -g)" \
             -e HOME=/app \
             -e OLLAMA_MODELS=/app/.ollama \
+            -e TG_BOT_TOKEN="${{ secrets.TG_BOT_TOKEN }}" \
+            -e TG_CHAT_ID="${{ secrets.TG_CHAT_ID }}" \
             "${GENESIS_IMAGE}" \
             sh -c "cargo build --release && ./target/release/md1robot"
