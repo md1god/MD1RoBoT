@@ -1,3 +1,4 @@
+mod notify;
 mod ollama_client;
 mod brain;
 mod db;
