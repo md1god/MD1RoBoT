@@ -28,6 +28,7 @@ impl OllamaClient {
         });
 
         let response = ureq::post(&url)
+            .set("Bypass-Tunnel-Reminder", "true")  // هذا يتجاوز صفحة LocalTunnel
             .timeout(std::time::Duration::from_secs(300))
             .send_json(body);
 
