@@ -1,4 +1,4 @@
-name: MD1RoBoT Build and Run Evolution
+name: MD1RoBoT Docker
 
 on:
   push:
