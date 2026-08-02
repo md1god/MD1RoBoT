@@ -60,11 +60,19 @@ jobs:
           ensemble_models = ["deepseek-r1:7b"]
           EOF
 
+      - name: Set up Ollama on Runner
+        run: |
+          curl -fsSL https://ollama.com/install.sh | sh
+          ollama serve &
+          sleep 5
+          ollama pull deepseek-r1:7b
+
       - name: Pull and run genesis core container
         run: |
           echo "${{ secrets.DOCKER_PAT }}" | docker login -u "dido599999" --password-stdin
           docker pull "${GENESIS_IMAGE}"
           docker run --rm \
+            --net=host \
             -v "${{ github.workspace }}:/app" \
             -w /app \
             --user "$(id -u):$(id -g)" \
