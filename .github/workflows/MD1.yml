@@ -1,4 +1,4 @@
-name: MD1RoBoT CI/CD & Cloud Training Pipeline
+name: Build and Push Genesis Core
 
 on:
   push:
@@ -6,20 +6,10 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-test-and-push:
+  build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Rust environment
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Run cargo tests
-        run: cargo test --verbose
+      - uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -30,29 +20,11 @@ jobs:
           username: dido599999
           password: ${{ secrets.DOCKER_PAT }}
 
-      - name: Build and Push Docker Image
+      - name: Build and Push
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
           tags: |
-            dido599999/md1robot:latest
-            dido599999/md1robot:${{ github.sha }}
-
-  trigger-cloud-training:
-    needs: build-test-and-push  # لن يبدأ التدريب السحابي داخل الحاوية إلا بعد نجاح البناء والاختبار والرفع
-    runs-on: ubuntu-latest
-    steps:
-      - name: Trigger training on Cloud/Gigal
-        env:
-          GIGAL_API_KEY: ${{ secrets.GIGAL_API_KEY }}
-        run: |
-          curl -X POST "https://api.gigal.ai/train" \
-            -H "Authorization: Bearer $GIGAL_API_KEY" \
-            -H "Content-Type: application/json" \
-            -d '{
-              "image": "docker.io/dido599999/md1robot:latest",
-              "command": "./target/release/md1robot --train",
-              "gpu": true,
-              "timeout_minutes": 60
-            }'
+            dido599999/genesis-core:latest
+            dido599999/genesis-core:${{ github.sha }}
