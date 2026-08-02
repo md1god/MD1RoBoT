@@ -1,0 +1,65 @@
+name: MD1RoBoT Docker Cloud Evolution
+
+on:
+  push:
+    branches: ["main", "master"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  run-genesis-docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    env:
+      GENESIS_IMAGE: dido599999/genesis-core:latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_TOKEN }}
+
+      - name: Create configuration file
+        run: |
+          # Use a single-quoted heredoc to avoid variable expansion inside the TOML
+          cat > config.toml <<'EOF'
+          [evolution]
+          max_cycles = 5
+          health_threshold = 0.7
+          [fitness_weights]
+          performance = 0.35
+          memory = 0.20
+          reliability = 0.30
+          maintainability = 0.15
+          [models]
+          rust = "deepseek-r1:7b"
+          python = "deepseek-r1:7b"
+          javascript = "deepseek-r1:7b"
+          c = "deepseek-r1:7b"
+          cpp = "deepseek-r1:7b"
+          default = "deepseek-r1:7b"
+          [kreza]
+          use_ensemble = false
+          ensemble_models = ["deepseek-r1:7b"]
+          EOF
+
+      - name: Pull and run genesis core container
+        run: |
+          docker pull "${GENESIS_IMAGE}"
+          # Run as the current runner user so files created in the workspace aren't root-owned.
+          # If the container needs root, remove --user "$(id -u):$(id -g)".
+          docker run --rm \
+            -v "${{ github.workspace }}:/app" \
+            -w /app \
+            --user "$(id -u):$(id -g)" \
+            "${GENESIS_IMAGE}"
