@@ -9,13 +9,13 @@ reliability = 0.30
 maintainability = 0.15
 
 [models]
-rust = "codegemma:7b"
-python = "codegemma:7b"
-javascript = "codegemma:7b"
-c = "codegemma:7b"
-cpp = "codegemma:7b"
-default = "codegemma:7b"
+rust = "deepseek-coder:6.7b"
+python = "qwen2.5-coder:7b"
+javascript = "qwen2.5-coder:7b"
+c = "deepseek-coder:6.7b"
+cpp = "deepseek-coder:6.7b"
+default = "qwen2.5-coder:7b"
 
 [kreza]
 use_ensemble = false
-ensemble_models = ["codegemma:7b"]
+ensemble_models = ["qwen2.5-coder:7b", "deepseek-coder:6.7b"]
