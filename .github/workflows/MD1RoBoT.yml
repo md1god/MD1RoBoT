@@ -1,4 +1,4 @@
-name: Build and Push Genesis Core
+name: Build and Push MD1RoBoT
 
 on:
   push:
