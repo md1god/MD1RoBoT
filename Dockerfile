@@ -8,7 +8,7 @@ RUN apt-get update && apt-get install -y \
     git \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip3 install --no-cache-dir pylint black
+RUN pip3 install --no-cache-dir --break-system-packages pylint black
 
 RUN curl -fsSL https://ollama.com/install.sh | sh
 
