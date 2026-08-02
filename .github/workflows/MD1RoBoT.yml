@@ -25,6 +25,4 @@ jobs:
         with:
           context: .
           push: true
-          tags: |
-            dido599999/genesis-core:latest
-            dido599999/genesis-core:${{ github.sha }}
+          tags: dido599999/genesis-core:latest
