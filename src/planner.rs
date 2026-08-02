@@ -1,3 +1,4 @@
+use crate::notify::Notifier;
 use crate::brain::Brain;
 use crate::db::{Db, Fitness};
 use crate::goal_manager::GoalManager;
@@ -85,7 +86,6 @@ impl Planner {
             let new_content = original_content.replace(&sug.original_snippet, &sug.new_snippet);
             let backup = format!("{}.bak", target_file);
             std::fs::copy(target_file, &backup).ok();
-            // Use a reference to avoid moving new_content
             std::fs::write(target_file, &new_content).map_err(|e| format!("Failed to write mutation: {e}"))?;
 
             let new_gen = self.evo.increment_generation()?;
