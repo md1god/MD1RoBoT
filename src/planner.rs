@@ -115,8 +115,14 @@ impl Planner {
             ).map_err(|e| e.to_string())?;
 
             println!("Mutation merged. Generation: {}", new_gen);
+            if let Some(n) = Notifier::from_env() {
+                n.send(&format!("✅ جيل جديد: {}\nملف: {}\nالهدف: {}", new_gen, sug.file_path, sug.objective));
+            }
         } else {
             println!("No acceptable mutation this cycle.");
+            if let Some(n) = Notifier::from_env() {
+                n.send("⚪ لا يوجد تحسين مقبول في هذه الدورة");
+            }
         }
 
         Ok(())
