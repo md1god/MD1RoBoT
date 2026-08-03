@@ -15,5 +15,5 @@ RUN pip3 install semgrep --break-system-packages
 COPY --from=builder /app/target/release/md1robot /app/md1robot
 WORKDIR /app
 VOLUME ["/app/memory", "/app/backups", "/root/.ollama"]
-EXPOSE 8080
+EXPOSE 10000
 CMD ["/app/md1robot"]
