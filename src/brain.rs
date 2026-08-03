@@ -54,7 +54,7 @@ impl Brain {
         let world = &ctx.world_state;
         let assessment = &ctx.self_assessment;
 
-        let state_str = format!(
+        let mut state_str = format!(
             "Generation: {}, Health: {:.2}, Weakest point: {}\nGoals: {}\nResources: CPU {:.0}%, Memory available {}MB",
             world.current_generation,
             world.health_score,
@@ -63,6 +63,24 @@ impl Brain {
             ctx.resource_state.cpu_usage_percent,
             ctx.resource_state.memory_available_mb,
         );
+
+        // إضافة النظريات النشطة
+        if !ctx.active_theories.is_empty() {
+            let theory_texts: Vec<String> = ctx.active_theories.iter()
+                .map(|t| format!("Theory (conf={:.2}): {}", t.confidence, t.statement))
+                .collect();
+            state_str.push_str("\nActive Theories:\n");
+            state_str.push_str(&theory_texts.join("\n"));
+        }
+
+        // إضافة الجينات النشطة
+        if !ctx.active_genes.is_empty() {
+            let gene_texts: Vec<String> = ctx.active_genes.iter()
+                .map(|g| format!("Gene: {} (success rate {:.2})", g.description, g.success_rate))
+                .collect();
+            state_str.push_str("\nActive Genes:\n");
+            state_str.push_str(&gene_texts.join("\n"));
+        }
 
         let memory = self.context_memory.join("\n");
         let lang_info = req.language_hint.as_ref().map(|l| format!("Target language: {}", l)).unwrap_or_default();
