@@ -20,7 +20,11 @@ impl ModelRouter {
     }
 
     pub fn route(&self, language: &str, prompt: &str) -> Result<String, String> {
-        let client = self.clients.get(language).unwrap_or_else(|| self.clients.get("default").unwrap());
+        let client = self.clients.get(language)
+            .or_else(|| self.clients.get("default"))
+            .ok_or("No client available for this language")?;
         client.generate(prompt)
     }
+
+    // (توسعة مستقبلية: مجلس، اقتصار طاقة...)
 }
