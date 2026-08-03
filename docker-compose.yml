@@ -1,0 +1,31 @@
+version: '3.8'
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    volumes:
+      - ollama_data:/root/.ollama
+    ports:
+      - "11434:11434"
+    restart: unless-stopped
+
+  md1robot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: md1robot
+    depends_on:
+      - ollama
+    environment:
+      - OLLAMA_HOST=ollama:11434
+    volumes:
+      - ./config.toml:/app/config.toml:ro
+      - ./memory:/app/memory
+      - ./backups:/app/backups
+      - ./ollama_data:/root/.ollama
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+volumes:
+  ollama_data:
