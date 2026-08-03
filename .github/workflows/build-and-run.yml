@@ -80,6 +80,3 @@ jobs:
             -e OLLAMA_HOST=http://localhost:11434 \
             ${{ env.DOCKER_IMAGE }} \
             ./md1robot --run-once
-
-    volumes:
-      ollama_data:
