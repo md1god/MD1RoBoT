@@ -1,6 +1,6 @@
 use crate::db::Db;
 use crate::goal_manager::GoalManager;
-use crate::protocol::{EvolutionContext, WorldState, ResourceState, ActiveTasks, SelfAssessment, KnowledgeItem, ExperimentRecord};
+use crate::protocol::{EvolutionContext, WorldState, ResourceState, ActiveTasks, SelfAssessment, KnowledgeItem, ExperimentRecord, Theory, DecisionGene};
 
 pub struct ContextBuilder {
     db: Db,
@@ -26,11 +26,8 @@ impl ContextBuilder {
         };
 
         let current_genome = self.db.get_latest_genome();
-
         let goals = self.goal_manager.current_goals();
-
         let experiments: Vec<ExperimentRecord> = self.db.get_recent_experiments(5);
-
         let knowledge: Vec<KnowledgeItem> = self.db.get_recent_knowledge(10)
             .into_iter()
             .map(|(topic, summary)| KnowledgeItem {
@@ -41,6 +38,10 @@ impl ContextBuilder {
                 confidence: 0.8,
             })
             .collect();
+
+        // --- جديد: تحميل النظريات والجينات النشطة ---
+        let theories = self.load_relevant_theories(&experiments, gen);
+        let genes = self.load_relevant_genes();
 
         let resources = ResourceState {
             cpu_usage_percent: 0.0,
@@ -70,11 +71,45 @@ impl ContextBuilder {
             resource_state: resources,
             active_tasks: tasks,
             self_assessment: assessment,
+            active_theories: theories,
+            active_genes: genes,
+            current_hypothesis: None, // سيُملأ لاحقاً من Crazy
         }
     }
 
     fn calculate_health(&self) -> f64 {
         let (_, fit, _) = self.db.get_evolution_state().unwrap_or((0, 0.0, 0));
         fit
+    }
+
+    /// استرجاع النظريات ذات الصلة بناءً على التجارب الحديثة (وسوم الملفات)
+    fn load_relevant_theories(&self, experiments: &[ExperimentRecord], _gen: u64) -> Vec<Theory> {
+        let mut tags = Vec::new();
+        for exp in experiments {
+            if let Some(ext) = exp.file_path.split('.').last() {
+                tags.push(format!("lang:{}", ext));
+            }
+        }
+        tags.dedup();
+        let db_theories = self.db.find_matching_theories(&tags);
+        db_theories.into_iter().map(|(id, statement, confidence, evidence)| {
+            Theory {
+                id,
+                statement,
+                hypotheses: vec![], // يمكن تحميلها لاحقاً إن أردت
+                confidence,
+                evidence_experiments: evidence,
+                applicable_languages: vec!["rust".to_string()],
+                related_genes: vec![],
+                created_generation: 0,
+                last_validated_generation: 0,
+            }
+        }).collect()
+    }
+
+    /// استرجاع الجينات الهندسية (حالياً ترجع فارغة أو بعض الأمثلة)
+    fn load_relevant_genes(&self) -> Vec<DecisionGene> {
+        // يمكن لاحقاً تحميلها من قاعدة البيانات
+        vec![]
     }
 }
