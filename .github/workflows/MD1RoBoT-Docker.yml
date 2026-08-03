@@ -1,4 +1,4 @@
-name: MD1RoBoT Build and Run Evolution
+name: MD1RoBoT CI
 
 on:
   push:
@@ -9,12 +9,20 @@ permissions:
   contents: read
 
 jobs:
-  build-and-run:
+  build-and-test:
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
+    services:
+      ollama:
+        image: ollama/ollama:latest
+        ports:
+          - 11434:11434
+        volumes:
+          - ollama_data:/root/.ollama
+
     env:
-      GENESIS_IMAGE: dido599999/genesis-core:${{ github.sha }}
+      DOCKER_IMAGE: dido599999/md1robot:${{ github.sha }}
 
     steps:
       - name: Checkout repository
@@ -29,48 +37,50 @@ jobs:
           username: dido599999
           password: ${{ secrets.DOCKER_PAT }}
 
-      - name: Build and Push Docker Image
+      - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
           tags: |
-            dido599999/genesis-core:latest
-            dido599999/genesis-core:${{ github.sha }}
+            dido599999/md1robot:latest
+            ${{ env.DOCKER_IMAGE }}
 
       - name: Create configuration file
         run: |
           cat > config.toml <<'EOF'
           [evolution]
-          max_cycles = 5
-          health_threshold = 0.7
+          max_cycles = 1
+          health_threshold = 0.4
           [fitness_weights]
           performance = 0.35
           memory = 0.20
           reliability = 0.30
           maintainability = 0.15
           [models]
-          rust = "deepseek-r1:7b"
-          python = "deepseek-r1:7b"
-          javascript = "deepseek-r1:7b"
-          c = "deepseek-r1:7b"
-          cpp = "deepseek-r1:7b"
-          default = "deepseek-r1:7b"
+          rust = "qwen2.5-coder:7b"
+          python = "qwen2.5-coder:7b"
+          default = "qwen2.5-coder:7b"
           [kreza]
           use_ensemble = false
-          ensemble_models = ["deepseek-r1:7b"]
+          ensemble_models = ["qwen2.5-coder:7b"]
           EOF
 
-      - name: Prepare persistent directories
-        run: mkdir -p memory backups ollama_data
-
-      - name: Pull and run genesis core container
+      - name: Pull Ollama models (for test)
         run: |
-          echo "${{ secrets.DOCKER_PAT }}" | docker login -u "dido599999" --password-stdin
-          docker pull "${GENESIS_IMAGE}"
+          curl http://localhost:11434/api/pull -d '{"name": "qwen2.5-coder:7b"}'
+
+      - name: Run MD1RoBoT single cycle test
+        run: |
           docker run --rm \
+            --network host \
             -v "${{ github.workspace }}/config.toml:/app/config.toml:ro" \
             -v "${{ github.workspace }}/memory:/app/memory" \
             -v "${{ github.workspace }}/backups:/app/backups" \
-            -v "${{ github.workspace }}/ollama_data:/root/.ollama" \
-            "${GENESIS_IMAGE}"
+            -e OLLAMA_HOST=http://localhost:11434 \
+            ${{ env.DOCKER_IMAGE }} \
+            ./md1robot --run-once
+        # ملاحظة: يجب أن يدعم التطبيق الأمر --run-once للخروج بعد دورة واحدة
+
+    volumes:
+      ollama_data:
