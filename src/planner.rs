@@ -29,8 +29,8 @@ impl Planner {
         let ctx_builder = ContextBuilder::new(self.db.clone(), self.goal_manager.clone());
         let mut ctx = ctx_builder.build();
 
-        // 1. توليد طفرات بفرضيات (Crazy الجديد يرجع مع كل طفرة فرضية)
-        let proposals = Crazy::propose_mutations(&mut self.brain, &ctx, 5)?;
+        let crazy = Crazy;
+        let proposals = crazy.propose_mutations(&mut self.brain, &ctx, 5)?;
 
         let mut best_score = 0.0;
         let mut best_plan: Option<(Suggestion, Evaluation, crate::db::Phenotype, Hypothesis)> = None;
@@ -43,7 +43,6 @@ impl Planner {
             let evaluation = kreza.evaluate(&mut self.brain, &prop, &ctx, pheno_opt.as_ref(), &errors);
             let error_hash = EvolutionController::hash_mutation(&sug.file_path, &sug.original_snippet, &sug.new_snippet);
 
-            // تسجيل التجربة في القاعدة (مع الفرضية)
             self.db.record_experiment(
                 &sug.id,
                 self.evo.current_generation(),
@@ -51,14 +50,14 @@ impl Planner {
                 &sug.reason,
                 &sug.objective,
                 sug.confidence,
-                &format!("{:?}", evaluation.verdict), // نص مبسط
-                None, // سنضيف phenotype لاحقاً
+                &format!("{:?}", evaluation.verdict),
+                None,
                 pheno_opt.as_ref(),
                 0,
                 &error_hash,
                 &errors,
                 Some(&prop.hypothesis.id),
-                None, // theory_id سيُحسب بعد قليل
+                None,
             ).map_err(|e| e.to_string())?;
 
             match &evaluation.verdict {
@@ -87,7 +86,6 @@ impl Planner {
             }
         }
 
-        // 2. تطبيق أفضل طفرة ثم تحويل فرضيتها إلى نظرية (إن أمكن)
         if let Some((sug, _eval, pheno, hyp)) = best_plan {
             let target_file = &sug.file_path;
             let original_content = std::fs::read_to_string(target_file)
@@ -114,21 +112,17 @@ impl Planner {
                 &fitness, &pheno, &error_hash,
             )?;
 
-            // --- 🧠 إدارة المعرفة: تسجيل الفرضية ونقلها لنظرية ---
-            // تأكد من تخزين الفرضية في DB
-            self.db.insert_hypothesis(&hyp.id, &hyp.statement, &hyp.context_tags, hyp.confidence, new_gen)
+            // تسجيل الفرضية ونقلها إلى نظرية
+            self.db.insert_hypothesis(&hyp.id, &hyp.statement, &hyp.context_tags, hyp.confidence as f64, new_gen)
                 .map_err(|e| e.to_string())?;
 
-            // ابحث عن نظريات مشابهة بناءً على الوسوم
             let matching_theories = self.db.find_matching_theories(&hyp.context_tags);
             let theory_id = if let Some((existing_id, existing_statement, old_conf, ev)) = matching_theories.first() {
-                // رفع ثقة النظرية الموجودة
-                let new_conf = (old_conf * 0.9 + 0.6 * 0.1).min(1.0); // نجاح جديد يضيف 0.6 ثقة
+                let new_conf = (old_conf + 0.6).min(1.0);
                 self.db.upsert_theory(existing_id, existing_statement, &hyp.id, new_conf, &["rust".to_string()], new_gen)
                     .map_err(|e| e.to_string())?;
                 existing_id.clone()
             } else {
-                // إنشاء نظرية جديدة
                 let new_theory_id = Uuid::new_v4().to_string();
                 let statement = format!("Hypothesis: {} (auto-generated theory)", hyp.statement);
                 self.db.upsert_theory(&new_theory_id, &statement, &hyp.id, 0.6, &["rust".to_string()], new_gen)
@@ -136,10 +130,6 @@ impl Planner {
                 new_theory_id
             };
 
-            // تحديث التجربة المسجلة بربطها بـ theory_id
-            // (للتبسيط، يمكننا تجاهل ربط التجربة الآن، أو تنفيذه لاحقاً)
-
-            // تخزين الجينوم الجديد
             let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
             let genome_id = Uuid::new_v4().to_string();
             let genome_hash = hex::encode(sha2::Sha256::digest(new_content.as_bytes()));
@@ -155,7 +145,6 @@ impl Planner {
             println!("No acceptable mutation this cycle.");
         }
 
-        // 3. إعادة بناء السياق بعد التحديث (للدورة القادمة)
         Ok(())
     }
 }
