@@ -1,0 +1,30 @@
+name: Merge Docker Repositories
+
+on:
+  workflow_dispatch: # يتيح لك تشغيل العملية يدوياً وقتما تشاء من تبويب Actions في جيت هب
+
+jobs:
+  merge-images:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Pull Genesis Core Image
+        run: |
+          docker pull dido599999/جينيسيس-كور:latest || true
+
+      - name: Tag and Push Genesis Core to MD1RoBoT
+        run: |
+          # إعادة تسمية الصورة للتوجه إلى المستودع الرئيسي مع وسم جديد
+          docker tag dido599999/جينيسيس-كور:latest dido599999/MD1RoBoT:genesis-core
+          docker push dido599999/MD1RoBoT:genesis-core
+
+      - name: Pull existing MD1RoBoT image (if any) and re-tag as latest
+        run: |
+          docker pull dido599999/MD1RoBoT:latest || true
+          # تأكيد وتحديث الرفع للمستودع الموحد
+          docker push dido599999/MD1RoBoT:latest || true
