@@ -62,7 +62,7 @@ jobs:
           EOF
 
       - name: Prepare persistent directories
-        run: mkdir -p memory backups
+        run: mkdir -p memory backups ollama_data
 
       - name: Pull and run genesis core container
         run: |
@@ -72,7 +72,5 @@ jobs:
             -v "${{ github.workspace }}/config.toml:/app/config.toml:ro" \
             -v "${{ github.workspace }}/memory:/app/memory" \
             -v "${{ github.workspace }}/backups:/app/backups" \
-            --user "$(id -u):$(id -g)" \
-            -e HOME=/app \
-            -e OLLAMA_MODELS=/app/.ollama \
+            -v "${{ github.workspace }}/ollama_data:/root/.ollama" \
             "${GENESIS_IMAGE}"
