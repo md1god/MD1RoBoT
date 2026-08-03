@@ -1,6 +1,5 @@
 use crate::brain::{Brain, TaskType, ThoughtRequest};
 use crate::db::Db;
-use crate::search;
 use crate::protocol::{AgentRole, EvolutionContext};
 use std::fs;
 
@@ -44,12 +43,9 @@ impl Seed {
         let query = raw_query.lines().next().unwrap_or("").trim().to_string();
         if query.is_empty() { return; }
 
-        let results = search::web_search(&query);
-        let _raw_findings = if results.is_empty() {
-            "No results found.".to_string()
-        } else {
-            results.iter().map(|r| format!("- {}: {} (full text: {})", r.title, r.snippet, r.full_text.as_deref().unwrap_or("none"))).collect::<Vec<_>>().join("\n")
-        };
+        // نحتاج إلى دالة search. بما أن crate::search غير موجودة، نستخدم بديلاً (مثلاً دالة فارغة أو ureq)
+        // نستبدل crate::search::web_search بدالة مؤقتة ترجع Vec فارغة.
+        let results = web_search(&query); // سنضيف هذه الدالة بنفس الملف
 
         let summary_request = ThoughtRequest {
             task_type: TaskType::Summarize,
@@ -74,4 +70,12 @@ impl Seed {
         fs::write(filename, content).ok();
         self.db.save_state(generation, age, curiosity).ok();
     }
+}
+
+/// دالة بحث مؤقتة لحين إصلاح crate::search
+fn web_search(query: &str) -> Vec<String> {
+    // يمكنك هنا استخدام ureq لاستدعاء API بحث أو إرجاع فارغة
+    // حالياً نعيد قائمة فارغة لتجنب الخطأ
+    eprintln!("Search not implemented; returning empty results.");
+    vec![]
 }
