@@ -1,32 +1,19 @@
-FROM rust:1.88-slim-bookworm
-
-RUN apt-get update && apt-get install -y \
-    curl pkg-config libssl-dev zstd \
-    python3 python3-pip python3-venv \
-    nodejs npm \
-    gcc g++ make \
-    git \
-    && rm -rf /var/lib/apt/lists/*
-
-RUN pip3 install --no-cache-dir --break-system-packages pylint black
-
-RUN curl -fsSL https://ollama.com/install.sh | sh
-
+# المرحلة الأولى: بناء التطبيق
+FROM rust:1.76 as builder
 WORKDIR /app
-
-COPY Cargo.toml .
+COPY Cargo.toml Cargo.lock* ./
+RUN mkdir src && echo "fn main() {}" > src/main.rs
+RUN cargo build --release 2>/dev/null || true
 COPY src/ src/
-
 RUN cargo build --release
 
+# المرحلة الثانية: الصورة النهائية
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y libssl-dev ca-certificates curl python3 nodejs npm gcc g++ nasm binutils semgrep && rm -rf /var/lib/apt/lists/*
+# تثبيت ollama داخل الصورة (حسب Dockerfile.sandbox)
+RUN curl -fsSL https://ollama.com/install.sh | sh
+COPY --from=builder /app/target/release/md1robot /app/md1robot
+WORKDIR /app
 VOLUME ["/app/memory", "/app/backups", "/root/.ollama"]
-
-CMD ["sh", "-c", "\
-    echo 'Starting Ollama...' && \
-    ollama serve & \
-    sleep 5 && \
-    echo 'Pulling models...' && \
-    ollama pull qwen2.5-coder:7b && \
-    ollama pull deepseek-coder:6.7b && \
-    echo 'Environment ready, launching MD1RoBoT...' && \
-    ./target/release/md1robot"]
+EXPOSE 8080
+CMD ["/app/md1robot"]
