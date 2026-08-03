@@ -37,7 +37,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let db = Db::open("evolution.db")?;
     let brain = Brain::new(config.clone());
     let goal_manager = GoalManager::new();
-    let evo = EvolutionController::new(db.clone())?;
+    // EvolutionController::new تحتاج مسار ملف lock (مثلاً "evolution.lock")
+    let evo = EvolutionController::new(db.clone(), "evolution.lock")?;
     let mut planner = Planner::new(brain, db.clone(), goal_manager, evo, config.clone());
 
     if run_once {
