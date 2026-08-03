@@ -1,5 +1,5 @@
 # المرحلة الأولى: بناء التطبيق
-FROM rust:1.76 AS builder
+FROM rust:latest AS builder
 WORKDIR /app
 COPY Cargo.toml Cargo.lock* ./
 RUN mkdir src && echo "fn main() {}" > src/main.rs
