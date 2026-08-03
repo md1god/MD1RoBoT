@@ -39,7 +39,6 @@ impl ContextBuilder {
             })
             .collect();
 
-        // --- جديد: تحميل النظريات والجينات النشطة ---
         let theories = self.load_relevant_theories(&experiments, gen);
         let genes = self.load_relevant_genes();
 
@@ -73,7 +72,7 @@ impl ContextBuilder {
             self_assessment: assessment,
             active_theories: theories,
             active_genes: genes,
-            current_hypothesis: None, // سيُملأ لاحقاً من Crazy
+            current_hypothesis: None,
         }
     }
 
@@ -82,7 +81,6 @@ impl ContextBuilder {
         fit
     }
 
-    /// استرجاع النظريات ذات الصلة بناءً على التجارب الحديثة (وسوم الملفات)
     fn load_relevant_theories(&self, experiments: &[ExperimentRecord], _gen: u64) -> Vec<Theory> {
         let mut tags = Vec::new();
         for exp in experiments {
@@ -96,7 +94,7 @@ impl ContextBuilder {
             Theory {
                 id,
                 statement,
-                hypotheses: vec![], // يمكن تحميلها لاحقاً إن أردت
+                hypotheses: vec![],
                 confidence,
                 evidence_experiments: evidence,
                 applicable_languages: vec!["rust".to_string()],
@@ -107,9 +105,7 @@ impl ContextBuilder {
         }).collect()
     }
 
-    /// استرجاع الجينات الهندسية (حالياً ترجع فارغة أو بعض الأمثلة)
     fn load_relevant_genes(&self) -> Vec<DecisionGene> {
-        // يمكن لاحقاً تحميلها من قاعدة البيانات
         vec![]
     }
 }
