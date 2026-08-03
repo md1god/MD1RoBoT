@@ -61,13 +61,17 @@ jobs:
           ensemble_models = ["deepseek-r1:7b"]
           EOF
 
+      - name: Prepare persistent directories
+        run: mkdir -p memory backups
+
       - name: Pull and run genesis core container
         run: |
           echo "${{ secrets.DOCKER_PAT }}" | docker login -u "dido599999" --password-stdin
           docker pull "${GENESIS_IMAGE}"
           docker run --rm \
-            -v "${{ github.workspace }}:/app" \
-            -w /app \
+            -v "${{ github.workspace }}/config.toml:/app/config.toml:ro" \
+            -v "${{ github.workspace }}/memory:/app/memory" \
+            -v "${{ github.workspace }}/backups:/app/backups" \
             --user "$(id -u):$(id -g)" \
             -e HOME=/app \
             -e OLLAMA_MODELS=/app/.ollama \
