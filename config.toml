@@ -1,6 +1,6 @@
 [evolution]
-max_cycles = 5
-health_threshold = 0.7
+max_cycles = 20               # عدد دورات أكثر
+health_threshold = 0.4        # أقل تشدداً
 
 [fitness_weights]
 performance = 0.35
@@ -15,7 +15,16 @@ javascript = "qwen2.5-coder:7b"
 c = "deepseek-coder:6.7b"
 cpp = "deepseek-coder:6.7b"
 default = "qwen2.5-coder:7b"
+assembly = "deepseek-coder:6.7b"
+shell = "qwen2.5-coder:7b"
 
 [kreza]
-use_ensemble = false
+use_ensemble = true
 ensemble_models = ["qwen2.5-coder:7b", "deepseek-coder:6.7b"]
+
+# إعدادات الوحش
+[beast]
+allow_network = true           # السماح للساندبوكس بالإنترنت لجمع المعرفة
+max_mutations_per_hour = 100   # بلا حدود تقريباً
+lite_mode = false              # القوة الكاملة
+self_preservation = "minimal"  # حماية خفيفة جداً
