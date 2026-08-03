@@ -15,7 +15,7 @@ async fn status(data: web::Data<AppState>) -> HttpResponse {
     let db = &data.db;
     let (gen, fitness, best_gen) = db.get_evolution_state().unwrap_or((0, 0.0, 0));
     let knowledge_count = db.knowledge_count();
-    let theories = db.find_matching_theories(&[]); // الكل حالياً
+    let theories = db.find_matching_theories(&[]);
 
     let status = serde_json::json!({
         "generation": gen,
@@ -46,7 +46,7 @@ pub async fn start_api(db: Db, planner: Planner, config: AppConfig) -> std::io::
     });
 
     HttpServer::new(move || {
-        let cors = Cors::permissive(); // يسمح بالاتصال من أي صفحة ويب
+        let cors = Cors::permissive();
         App::new()
             .wrap(cors)
             .app_data(data.clone())
