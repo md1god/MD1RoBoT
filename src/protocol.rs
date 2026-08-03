@@ -2,12 +2,29 @@ use serde::{Deserialize, Serialize};
 use crate::db::{Fitness, Phenotype};
 use crate::genome::GenomeNode;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum AgentRole {
     Crazy,
     Kreza,
     Researcher,
     Tester,
+    Architect,
+    Coder,
+    Reviewer,
+}
+
+impl AgentRole {
+    pub fn agent_role(&self) -> String {
+        match self {
+            AgentRole::Crazy => "Crazy".to_string(),
+            AgentRole::Kreza => "Kreza".to_string(),
+            AgentRole::Researcher => "Researcher".to_string(),
+            AgentRole::Tester => "Tester".to_string(),
+            AgentRole::Architect => "Architect".to_string(),
+            AgentRole::Coder => "Coder".to_string(),
+            AgentRole::Reviewer => "Reviewer".to_string(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -28,9 +45,18 @@ pub struct Suggestion {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Hypothesis {
+    pub id: String,
+    pub statement: String,
+    pub context_tags: Vec<String>,
+    pub confidence: f32,
+    pub generation: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MutationProposal {
     pub suggestion: Suggestion,
-    pub hypothesis: String,
+    pub hypothesis: Hypothesis,
     pub expected_fitness_gain: f64,
     pub risk: f64,
 }
@@ -46,11 +72,69 @@ pub enum Verdict {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CouncilVote {
+    pub agent: AgentRole,
+    pub benefit: f64,
+    pub novelty: f64,
+    pub risk: f64,
+    pub cost: f64,
+    pub confidence: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Evaluation {
     pub verdict: Verdict,
     pub score: f32,
+    pub council_votes: Vec<CouncilVote>,
     pub metrics: Vec<String>,
     pub fitness_delta: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DecisionGene {
+    pub id: String,
+    pub description: String,
+    pub language: String,
+    pub applicability_tags: Vec<String>,
+    pub benefits: Vec<String>,
+    pub risks: Vec<String>,
+    pub evidence_count: u32,
+    pub success_rate: f64,
+    pub last_used_generation: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Theory {
+    pub id: String,
+    pub statement: String,
+    pub hypotheses: Vec<String>,
+    pub confidence: f64,
+    pub evidence_experiments: u32,
+    pub applicable_languages: Vec<String>,
+    pub related_genes: Vec<String>,
+    pub created_generation: u64,
+    pub last_validated_generation: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KnowledgeItem {
+    pub id: String,
+    pub topic: String,
+    pub summary: String,
+    pub source_type: String,
+    pub confidence: f32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExperimentRecord {
+    pub experiment_id: String,
+    pub generation: u64,
+    pub file_path: String,
+    pub verdict: String,
+    pub fitness: Option<Fitness>,
+    pub phenotype: Option<Phenotype>,
+    pub error_hash: String,
+    pub timestamp: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -87,27 +171,6 @@ pub struct SelfAssessment {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct KnowledgeItem {
-    pub id: String,
-    pub topic: String,
-    pub summary: String,
-    pub source_type: String,
-    pub confidence: f32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ExperimentRecord {
-    pub experiment_id: String,
-    pub generation: u64,
-    pub file_path: String,
-    pub verdict: String,
-    pub fitness: Option<Fitness>,
-    pub phenotype: Option<Phenotype>,
-    pub error_hash: String,
-    pub timestamp: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EvolutionContext {
     pub world_state: WorldState,
     pub current_genome: Option<GenomeNode>,
@@ -117,6 +180,9 @@ pub struct EvolutionContext {
     pub resource_state: ResourceState,
     pub active_tasks: ActiveTasks,
     pub self_assessment: SelfAssessment,
+    pub active_theories: Vec<Theory>,
+    pub active_genes: Vec<DecisionGene>,
+    pub current_hypothesis: Option<Hypothesis>,
 }
 
 impl EvolutionContext {
@@ -151,6 +217,25 @@ impl EvolutionContext {
                 weakest_point: "غير معروف".into(),
                 improvement_score: 0.0,
             },
+            active_theories: vec![],
+            active_genes: vec![],
+            current_hypothesis: None,
         }
+    }
+}
+
+impl Evaluation {
+    pub fn compute_weighted_score(votes: &[CouncilVote]) -> f32 {
+        if votes.is_empty() {
+            return 0.0;
+        }
+        let n = votes.len() as f64;
+        let avg_benefit = votes.iter().map(|v| v.benefit).sum::<f64>() / n;
+        let avg_novelty = votes.iter().map(|v| v.novelty).sum::<f64>() / n;
+        let avg_risk = votes.iter().map(|v| v.risk).sum::<f64>() / n;
+        let avg_cost = votes.iter().map(|v| v.cost).sum::<f64>() / n;
+        let avg_confidence = votes.iter().map(|v| v.confidence).sum::<f64>() / n;
+        let raw = 0.4 * avg_benefit + 0.2 * avg_novelty - 0.2 * avg_risk - 0.2 * avg_cost;
+        (raw * avg_confidence) as f32
     }
 }
