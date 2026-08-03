@@ -1,58 +1,56 @@
-mod ollama_client;
+use std::sync::Arc;
+use std::io::Write;
+
+mod api;
 mod brain;
-mod db;
-mod search;
-mod seed;
-mod protocol;
+mod config_loader;
 mod context_builder;
+mod crazy;
+mod db;
 mod evolution;
 mod evolution_lab;
 mod goal_manager;
-mod planner;
-mod crazy;
-mod kreza;
 mod genome;
-mod model_router;
+mod kreza;
 mod memory_store;
+mod model_router;
+mod ollama_client;
+mod planner;
+mod protocol;
 mod resource_governor;
+mod seed;
 mod workspace_tools;
 mod independent_verifier;
-mod config_loader;
 
+use config_loader::AppConfig;
 use db::Db;
 use brain::Brain;
+use goal_manager::GoalManager;
 use evolution::EvolutionController;
 use planner::Planner;
-use goal_manager::GoalManager;
-use config_loader::AppConfig;
 
-fn main() {
-    println!("🌱 MD1RoBoT — Multi-Language Self-Evolution Engine");
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // تحميل الإعدادات
+    let config = config_loader::load_config("config.toml");
 
-    let config = AppConfig::load().expect("Failed to load config.toml");
+    // قاعدة البيانات
+    let db = Db::open("evolution.db")?;
 
-    let db = Db::open("memory.db").expect("Failed to open database");
+    // المكونات الأساسية
     let brain = Brain::new(config.clone());
-    let goal_manager = GoalManager::new();
+    let goal_manager = GoalManager::new(); // افترض وجوده
+    let evo = EvolutionController::new(db.clone())?;
 
-    let evo = EvolutionController::new(db.clone(), "./md1robot.lock")
-        .expect("Failed to initialize EvolutionController");
+    let planner = Planner::new(brain, db.clone(), goal_manager, evo, config.clone());
 
-    let mut planner = Planner::new(brain, db, goal_manager, evo, config.clone());
+    // طباعة رسالة بدء التشغيل
+    println!("🧬 MD1RoBoT started. API server on http://0.0.0.0:8080");
 
-    for _ in 0..config.max_cycles {
-        if !planner.evo.acquire_lock() {
-            println!("⚠️ Evolution lock held, skipping cycle.");
-            continue;
-        }
+    // تشغيل خادم API في خلفية غير متزامنة
+    let rt = tokio::runtime::Runtime::new()?;
+    rt.block_on(async {
+        api::start_api(db.clone(), planner, config).await
+    })?;
 
-        match planner.run_cycle() {
-            Ok(()) => {}
-            Err(e) => println!("⚠️ Error in evolution cycle: {e}"),
-        }
-
-        planner.evo.release_lock();
-    }
-
-    println!("✅ Evolution cycles complete. Current generation: {}", planner.evo.current_generation());
+    Ok(())
 }
