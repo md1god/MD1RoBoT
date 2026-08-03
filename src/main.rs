@@ -30,23 +30,25 @@ use evolution::EvolutionController;
 use planner::Planner;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // تحميل الإعدادات
+    let args: Vec<String> = std::env::args().collect();
+    let run_once = args.contains(&"--run-once".to_string());
+
     let config = config_loader::load_config("config.toml");
-
-    // قاعدة البيانات
     let db = Db::open("evolution.db")?;
-
-    // المكونات الأساسية
     let brain = Brain::new(config.clone());
-    let goal_manager = GoalManager::new(); // افترض وجوده
+    let goal_manager = GoalManager::new();
     let evo = EvolutionController::new(db.clone())?;
+    let mut planner = Planner::new(brain, db.clone(), goal_manager, evo, config.clone());
 
-    let planner = Planner::new(brain, db.clone(), goal_manager, evo, config.clone());
+    if run_once {
+        println!("Running one evolution cycle...");
+        planner.run_cycle()?;
+        println!("Cycle completed successfully.");
+        return Ok(());
+    }
 
-    // طباعة رسالة بدء التشغيل
-    println!("🧬 MD1RoBoT started. API server on http://0.0.0.0:8080");
-
-    // تشغيل خادم API في خلفية غير متزامنة
+    // وضع الخادم المستمر
+    println!("🧬 MD1RoBoT API server on http://0.0.0.0:8080");
     let rt = tokio::runtime::Runtime::new()?;
     rt.block_on(async {
         api::start_api(db.clone(), planner, config).await
