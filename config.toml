@@ -1,6 +1,6 @@
 [evolution]
-max_cycles = 20               # عدد دورات أكثر
-health_threshold = 0.4        # أقل تشدداً
+max_cycles = 20
+health_threshold = 0.4
 
 [fitness_weights]
 performance = 0.35
@@ -22,9 +22,8 @@ shell = "qwen2.5-coder:7b"
 use_ensemble = true
 ensemble_models = ["qwen2.5-coder:7b", "deepseek-coder:6.7b"]
 
-# إعدادات الوحش
 [beast]
-allow_network = true           # السماح للساندبوكس بالإنترنت لجمع المعرفة
-max_mutations_per_hour = 100   # بلا حدود تقريباً
-lite_mode = false              # القوة الكاملة
-self_preservation = "minimal"  # حماية خفيفة جداً
+allow_network = true
+max_mutations_per_hour = 100
+lite_mode = false
+self_preservation = "minimal"
