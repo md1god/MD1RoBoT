@@ -1,5 +1,5 @@
 # المرحلة الأولى: بناء التطبيق
-FROM rust:latest AS builder
+FROM rust:1.76 as builder
 WORKDIR /app
 COPY Cargo.toml Cargo.lock* ./
 RUN mkdir src && echo "fn main() {}" > src/main.rs
@@ -7,18 +7,13 @@ RUN cargo build --release 2>/dev/null || true
 COPY src/ src/
 RUN cargo build --release
 
-# المرحلة الثانية: الصورة النهائية
+# المرحلة الثانية: الصورة النهائية (خفيفة)
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y \
-    libssl-dev ca-certificates curl python3 python3-pip \
-    nodejs npm gcc g++ nasm binutils \
+    libssl-dev ca-certificates \
+    python3 nodejs npm gcc g++ nasm binutils semgrep \
     && rm -rf /var/lib/apt/lists/*
-
-RUN pip3 install --break-system-packages semgrep
-
-# تثبيت ollama داخل الصورة (حسب Dockerfile.sandbox)
-RUN curl -fsSL https://ollama.com/install.sh | sh
-
+# لا داعي لتثبيت ollama هنا – سيتم استخدام خدمة ollama الخارجية
 COPY --from=builder /app/target/release/md1robot /app/md1robot
 WORKDIR /app
 VOLUME ["/app/memory", "/app/backups", "/root/.ollama"]
