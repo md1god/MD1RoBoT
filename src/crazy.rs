@@ -6,18 +6,16 @@ use uuid::Uuid;
 pub struct Crazy;
 
 impl Crazy {
-    /// توليد طفرات مع فرضيات، باستخدام نظريات من Theory Bank إن وجدت.
     pub fn propose_mutations(
+        &self, // <-- أضفنا self هنا
         brain: &mut Brain,
         ctx: &EvolutionContext,
         max_mutations: usize,
     ) -> Result<Vec<MutationProposal>, String> {
-        // 1. صياغة فرضيات مرشحة (Hypotheses) بناءً على السياق والنظريات النشطة
         let hypothesis_requests = self.build_hypothesis_requests(ctx, max_mutations);
         let mut hypotheses = Vec::new();
         for hyp_req in hypothesis_requests {
             let response = brain.think(hyp_req)?;
-            // تنظيف الاستجابة: نأخذ أول سطر غير فارغ
             let statement = response.lines()
                 .find(|l| !l.trim().is_empty())
                 .unwrap_or("No hypothesis generated")
@@ -32,14 +30,12 @@ impl Crazy {
             hypotheses.push(hyp);
         }
 
-        // 2. بناء قائمة الأفكار الفاشلة سابقاً
         let failed_ids = ctx.recent_experiments.iter()
             .filter(|e| e.verdict == "REJECTED")
             .map(|e| e.experiment_id.clone())
             .collect::<Vec<_>>()
             .join(", ");
 
-        // 3. تحضير نصوص النظريات النشطة لإرشاد Crazy
         let theory_hints = if ctx.active_theories.is_empty() {
             "No prior theories available.".to_string()
         } else {
@@ -49,7 +45,6 @@ impl Crazy {
                 .join("\n")
         };
 
-        // 4. توليد الطفرات نفسها، مع إرفاق كل واحدة بفرضيتها
         let mut proposals = Vec::new();
         for hyp in &hypotheses {
             let constraints = vec![
@@ -71,13 +66,11 @@ impl Crazy {
             };
 
             let response = brain.think(request)?;
-            // استخراج JSON واحد بدل مصفوفة
             let start = response.find('{').ok_or("No JSON object in response")?;
             let end = response.rfind('}').ok_or("JSON object incomplete")?;
             let json_str = &response[start..=end];
             let mut proposal: MutationProposal = serde_json::from_str(json_str)
                 .map_err(|e| format!("Invalid MutationProposal: {e}"))?;
-            // نربط الفرضية (نضمن استخدام الفرضية التي أنشأناها)
             proposal.hypothesis = hyp.clone();
             proposals.push(proposal);
         }
@@ -85,10 +78,9 @@ impl Crazy {
         Ok(proposals)
     }
 
-    /// بناء طلبات لتوليد فرضيات متنوعة
     fn build_hypothesis_requests(&self, ctx: &EvolutionContext, count: usize) -> Vec<ThoughtRequest> {
         let base_prompt = format!(
-            "You are a creative AI scientist. Based on the current system state (generation {}, health {:.2}), suggest a falsifiable hypothesis for improving the code. A hypothesis is a statement like 'Removing X will improve Y'.",
+            "You are a creative AI scientist. Based on the current system state (generation {}, health {:.2}), suggest a falsifiable hypothesis for improving the code.",
             ctx.world_state.current_generation, ctx.world_state.health_score
         );
         let mut requests = Vec::new();
@@ -103,7 +95,7 @@ impl Crazy {
             let style = styles[i % styles.len()];
             let goal = format!("{} {}", base_prompt, style);
             let req = ThoughtRequest {
-                task_type: TaskType::ReasonAboutCode, // أقرب نوع للتفكير الحر
+                task_type: TaskType::ReasonAboutCode,
                 goal,
                 context: ctx.clone(),
                 constraints: vec!["Reply with only the hypothesis statement, one sentence.".into()],
@@ -115,10 +107,8 @@ impl Crazy {
         requests
     }
 
-    /// استخراج وسوم سياقية من السياق الحالي لاستخدامها في مطابقة النظريات
     fn extract_tags(&self, ctx: &EvolutionContext) -> Vec<String> {
         let mut tags = Vec::new();
-        // نضيف أسماء الملفات التي تم التعديل عليها مؤخراً
         for exp in &ctx.recent_experiments {
             if let Some(ext) = exp.file_path.split('.').last() {
                 tags.push(format!("lang:{}", ext));
