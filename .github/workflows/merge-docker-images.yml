@@ -15,6 +15,6 @@ jobs:
 
       - name: Pull and Push Images
         run: |
-          docker pull dido599999/جينيسيس-كور:latest || true
-          docker tag dido599999/جينيسيس-كور:latest dido599999/MD1RoBoT:genesis-core
-          docker push dido599999/MD1RoBoT:genesis-core
+          docker pull dido599999/genesis-core:latest || true
+          docker tag dido599999/genesis-core:latest dido599999/md1robot:genesis-core
+          docker push dido599999/md1robot:genesis-core
