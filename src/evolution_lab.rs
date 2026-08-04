@@ -126,7 +126,7 @@ impl EvolutionLab {
         let absolute_host_dir = std::fs::canonicalize(host_dir)
             .map_err(|e| format!("Cannot resolve path: {e}"))?;
 
-        // أمر docker run
+        // أمر docker run (تمت إزالة --timeout لأنها ليست وسيطاً مدعوماً بشكل مباشر في docker run وتتسبب في خطأ)
         let mut docker_args = vec![
             "run".to_string(),
             "--rm".to_string(),
@@ -136,7 +136,6 @@ impl EvolutionLab {
             "--network=none".to_string(), // بدون شبكة افتراضياً (يمكن تغييره عبر config)
             "--cpus=1".to_string(),
             "--memory=256m".to_string(),
-            "--timeout=30".to_string(), // مهلة 30 ثانية
             image.to_string(),
         ];
 
