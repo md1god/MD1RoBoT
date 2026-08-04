@@ -64,7 +64,6 @@ impl Brain {
             ctx.resource_state.memory_available_mb,
         );
 
-        // إضافة النظريات النشطة
         if !ctx.active_theories.is_empty() {
             let theory_texts: Vec<String> = ctx.active_theories.iter()
                 .map(|t| format!("Theory (conf={:.2}): {}", t.confidence, t.statement))
@@ -73,7 +72,6 @@ impl Brain {
             state_str.push_str(&theory_texts.join("\n"));
         }
 
-        // إضافة الجينات النشطة
         if !ctx.active_genes.is_empty() {
             let gene_texts: Vec<String> = ctx.active_genes.iter()
                 .map(|g| format!("Gene: {} (success rate {:.2})", g.description, g.success_rate))
@@ -84,10 +82,15 @@ impl Brain {
 
         let memory = self.context_memory.join("\n");
         let lang_info = req.language_hint.as_ref().map(|l| format!("Target language: {}", l)).unwrap_or_default();
+        
+        let port = std::env::var("PORT").unwrap_or_else(|_| "10000".to_string());
+        let bind_info = format!("Server bind target: 0.0.0.0:{}", port);
+
         format!(
-            "{}\n{}\nPrior knowledge:\n{}\nConstraints: {}\nExecute task ({:?}) precisely.",
+            "{}\n{}\n{}\nPrior knowledge:\n{}\nConstraints: {}\nExecute task ({:?}) precisely.",
             state_str,
             lang_info,
+            bind_info,
             memory,
             req.constraints.join(", "),
             req.task_type
