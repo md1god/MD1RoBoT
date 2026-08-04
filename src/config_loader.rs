@@ -10,6 +10,8 @@ pub struct AppConfig {
     pub evolution_cycles: u64,
     pub lite_mode: bool,
     pub energy_costs: HashMap<String, u32>,
+    #[serde(default)]
+    pub groq_api_key: Option<String>, // حقل مفتاح Groq الاختياري
 }
 
 impl Default for AppConfig {
@@ -27,6 +29,7 @@ impl Default for AppConfig {
             evolution_cycles: 5,
             lite_mode: false,
             energy_costs: energy,
+            groq_api_key: None,
         }
     }
 }
