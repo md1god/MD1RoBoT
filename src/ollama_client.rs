@@ -45,7 +45,15 @@ impl OllamaClient {
             .timeout(std::time::Duration::from_secs(300))
             .build();
 
-        let max_attempts = 5;
+        // تباعد استباقي بين الطلبات (فقط عند استخدام Groq، الذي له حد صارم
+        // للتوكنات في الدقيقة). هذا يمنع تكدّس عدة طلبات متتالية في نفس
+        // الدقيقة ويقلل الاصطدام بحد الـ rate limit من الأساس، بدل الاعتماد
+        // فقط على إعادة المحاولة بعد الفشل.
+        if self.api_key.is_some() {
+            sleep(Duration::from_secs(3));
+        }
+
+        let max_attempts = 6;
         for attempt in 0..max_attempts {
             let (url, body) = if let Some(ref api_key) = self.api_key {
                 let _ = api_key;
@@ -102,7 +110,10 @@ impl OllamaClient {
                 }
                 Err(ureq::Error::Status(429, resp)) => {
                     let text = resp.into_string().unwrap_or_default();
-                    let wait_secs = parse_retry_seconds(&text).unwrap_or(5.0);
+                    // نضيف ثانية إضافية كهامش أمان فوق ما تطلبه Groq بالضبط،
+                    // لأن الالتزام الحرفي بالرقم أحياناً غير كافٍ إذا كانت
+                    // ساعة الخادم والعميل غير متطابقتين تماماً.
+                    let wait_secs = parse_retry_seconds(&text).unwrap_or(8.0) + 1.0;
                     eprintln!(
                         "Rate limited (attempt {}). Waiting {:.1}s...",
                         attempt + 1,
