@@ -54,7 +54,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    eprintln!("Starting API server on port {}...", std::env::var("PORT").unwrap_or_else(|_| "8080".to_string()));
+    let port = std::env::var("PORT").unwrap_or_else(|_| "10000".to_string());
+    eprintln!("Starting API server on port {}...", port);
     let rt = tokio::runtime::Runtime::new()?;
     rt.block_on(async {
         api::start_api(db.clone(), planner, config).await
