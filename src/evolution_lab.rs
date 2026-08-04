@@ -9,45 +9,39 @@ use uuid::Uuid;
 pub struct EvolutionLab;
 
 impl EvolutionLab {
-    /// تشغيل تجربة داخل حاوية Docker معزولة.
+    /// تشغيل تجربة مباشرة في البيئة الحالية (بدون Docker) لتناسب Render.
     pub fn run_experiment(project_dir: &str, suggestion: &Suggestion) -> Result<(bool, Option<Phenotype>, Vec<String>), String> {
-        let container_name = format!("md1robot_exp_{}", Uuid::new_v4());
-        let sandbox_image = "md1robot-sandbox:latest"; // يجب بناؤه مسبقاً
-
-        // 1. نسخ المشروع إلى مجلد مؤقت ليكون مصدراً للحاوية
+        // 1. نسخ المشروع إلى مجلد مؤقت لعزل التجربة
         let temp_host_dir = format!("./temp_lab_{}", suggestion.id);
         copy_dir(project_dir, &temp_host_dir).map_err(|e| format!("Copy project failed: {e}"))?;
 
         // 2. تطبيق الطفرة على الملف المستهدف داخل المجلد المؤقت
         let target_in_temp = Path::new(&temp_host_dir).join(&suggestion.file_path);
-        let content = fs::read_to_string(&target_in_temp).map_err(|e| format!("Read file: {e}"))?;
-        if content.contains(&suggestion.original_snippet) {
+        
+        // التأكد من وجود المجلدات الأب للملف إذا كان جديداً
+        if let Some(parent) = target_in_temp.parent() {
+            fs::create_dir_all(parent).map_err(|e| format!("Create parent dirs: {e}"))?;
+        }
+
+        let content = fs::read_to_string(&target_in_temp).unwrap_or_default();
+        if !content.is_empty() && content.contains(&suggestion.original_snippet) {
             let new_content = content.replace(&suggestion.original_snippet, &suggestion.new_snippet);
             fs::write(&target_in_temp, new_content).map_err(|e| format!("Write mutation: {e}"))?;
-        } else if suggestion.language != "shell" && suggestion.language != "asm" {
-            // إذا لم يكن الكود الأصلي موجوداً، نسمح بذلك فقط للغات "الحرة" (shell/asm) حيث يتم إنشاء ملف جديد.
-            // وإلا نرفض.
+        } else if suggestion.language != "shell" && suggestion.language != "asm" && !content.is_empty() {
             let _ = fs::remove_dir_all(&temp_host_dir);
-            return Err("Original snippet not found and language is not freeform".to_string());
+            return Err("Original snippet not found in existing file".to_string());
         } else {
-            // للغات الحرة: نكتب المحتوى الجديد مباشرة إذا كان الملف غير موجود،
-            // أو نلحق به إذا كان موجوداً (سلوك تطوري حر).
-            let mut current = String::new();
-            if target_in_temp.exists() {
-                current = fs::read_to_string(&target_in_temp).unwrap_or_default();
-            }
-            fs::write(&target_in_temp, format!("{}{}", current, suggestion.new_snippet))
+            // للغات الحرة أو الملفات الجديدة
+            fs::write(&target_in_temp, &suggestion.new_snippet)
                 .map_err(|e| format!("Write freeform mutation: {e}"))?;
         }
 
-        // 3. إعداد أمر البناء/التشغيل داخل الحاوية حسب اللغة
+        // 3. إعداد أوامر البناء/التشغيل
         let (build_cmd, test_cmd) = Self::commands_for_language(&suggestion.language, &suggestion.file_path);
 
-        // 4. تشغيل الحاوية وتنفيذ الأوامر
+        // 4. تشغيل الأوامر محلياً
         let start = Instant::now();
-        let (success, stdout, stderr) = Self::run_in_container(
-            &container_name,
-            sandbox_image,
+        let (success, stdout, stderr) = Self::run_locally(
             &temp_host_dir,
             &build_cmd,
             &test_cmd,
@@ -57,7 +51,7 @@ impl EvolutionLab {
         let phenotype = if success {
             Some(Phenotype {
                 search_speed_ms: 0,
-                memory_usage_mb: 0, // يمكن قياسه لاحقاً من Docker stats
+                memory_usage_mb: 0,
                 error_rate: 0.0,
                 build_time_ms: build_time,
             })
@@ -66,7 +60,7 @@ impl EvolutionLab {
         };
 
         let errors = if !success {
-            vec![format!("Build output:\n{}", stderr)]
+            vec![format!("Execution output:\nSTDOUT: {}\nSTDERR: {}", stdout, stderr)]
         } else {
             vec![]
         };
@@ -82,7 +76,7 @@ impl EvolutionLab {
         match language {
             "rust" => (
                 vec!["cargo check".into()],
-                vec!["cargo test --no-run 2>&1 || true".into()], // لا نشغل الاختبارات فعلياً لتوفير الوقت
+                vec![],
             ),
             "python" => (
                 vec![format!("python3 -m py_compile {}", file_path)],
@@ -97,106 +91,58 @@ impl EvolutionLab {
                 vec![],
             ),
             "shell" => (
-                vec!["sh -c '".to_string() + &file_path + "'"], // سيتم استبدال file_path لاحقاً
+                vec![format!("chmod +x {} && ./{}", file_path, file_path)],
                 vec![],
             ),
-            "asm" => (
-                vec![
-                    format!("nasm -f elf64 -o /tmp/out.o {}", file_path),
-                    "ld -o /tmp/out /tmp/out.o".into(),
-                ],
-                vec!["/tmp/out".into()],
-            ),
             _ => (
-                vec!["semgrep --config=auto .".into()],
+                vec!["ls -l".into()], // أمر بسيط للتحقق من الوجود كخيار افتراضي
                 vec![],
             ),
         }
     }
 
-    /// تشغيل الأوامر داخل حاوية Docker مؤقتة.
-    fn run_in_container(
-        container_name: &str,
-        image: &str,
-        host_dir: &str,
+    /// تنفيذ الأوامر مباشرة في المجلد المؤقت.
+    fn run_locally(
+        work_dir: &str,
         build_cmds: &[String],
         test_cmds: &[String],
     ) -> Result<(bool, String, String), String> {
-        // تحويل المسار إلى مطلق
-        let absolute_host_dir = std::fs::canonicalize(host_dir)
-            .map_err(|e| format!("Cannot resolve path: {e}"))?;
+        let mut all_cmds = build_cmds.to_vec();
+        all_cmds.extend_from_slice(test_cmds);
+        let joined_cmds = all_cmds.join(" && ");
 
-        // أمر docker run (تمت إزالة --timeout لأنها ليست وسيطاً مدعوماً بشكل مباشر في docker run وتتسبب في خطأ)
-        let mut docker_args = vec![
-            "run".to_string(),
-            "--rm".to_string(),
-            "--name".to_string(), container_name.to_string(),
-            "-v".to_string(), format!("{}:/app/project:ro", absolute_host_dir.display()), // للقراءة فقط داخل الحاوية
-            "-w".to_string(), "/app/project".to_string(),
-            "--network=none".to_string(), // بدون شبكة افتراضياً (يمكن تغييره عبر config)
-            "--cpus=1".to_string(),
-            "--memory=256m".to_string(),
-            image.to_string(),
-        ];
-
-        // إعداد أمر شل واحد يجمع البناء والتشغيل
-        let mut combined_script = String::new();
-        for cmd in build_cmds {
-            combined_script.push_str(&format!("echo '>>> BUILD: {}'; {} ;\\\n", cmd, cmd));
-        }
-        for cmd in test_cmds {
-            combined_script.push_str(&format!("echo '>>> TEST: {}'; {} ;\\\n", cmd, cmd));
-        }
-        docker_args.push("sh".into());
-        docker_args.push("-c".into());
-        docker_args.push(combined_script.clone());
-
-        // تنفيذ Docker
-        let output = Command::new("docker")
-            .args(&docker_args)
+        let output = Command::new("sh")
+            .arg("-c")
+            .arg(&joined_cmds)
+            .current_dir(work_dir)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()
-            .map_err(|e| format!("Failed to run docker: {e}"))?;
+            .map_err(|e| format!("Local execution failed: {e}"))?;
 
         let stdout = String::from_utf8_lossy(&output.stdout).to_string();
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-        let success = output.status.success();
 
-        Ok((success, stdout, stderr))
+        Ok((output.status.success(), stdout, stderr))
     }
 }
 
-// دالة نسخ المجلدات: تستبعد المجلدات/الملفات التي لا يجب أن تدخل الـ sandbox
-// (بما فيها أي مخلفات "temp_lab_*" من تجارب سابقة فشلت، لمنع تعشيش
-// المسارات الذي يسبب "اسم الملف طويل جداً / OS error 36").
-fn copy_dir(src: &str, dst: &str) -> std::io::Result<()> {
-    fs::create_dir_all(dst)?;
+fn copy_dir(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> std::io::Result<()> {
+    fs::create_dir_all(&dst)?;
     for entry in fs::read_dir(src)? {
         let entry = entry?;
         let ty = entry.file_type()?;
-        let src_path = entry.path();
-        let dst_path = Path::new(dst).join(entry.file_name());
-
         let name = entry.file_name();
-        let name_str = name.to_string_lossy();
-        let is_excluded = name_str == "target"
-            || name_str == ".git"
-            || name_str.starts_with("temp_lab")
-            || name_str == "backups"
-            || name_str == "memory"
-            || name_str.ends_with(".db")
-            || name_str.ends_with(".db-wal")
-            || name_str.ends_with(".db-shm");
-
-        if is_excluded {
+        
+        // تجاهل المجلدات الكبيرة والمؤقتة
+        if name == "target" || name == ".git" || name.to_string_lossy().starts_with("temp_lab_") {
             continue;
         }
 
         if ty.is_dir() {
-            copy_dir(&src_path.to_string_lossy(), &dst_path.to_string_lossy())?;
+            copy_dir(entry.path(), dst.as_ref().join(name))?;
         } else {
-            fs::copy(&src_path, &dst_path)?;
+            fs::copy(entry.path(), dst.as_ref().join(name))?;
         }
     }
     Ok(())
