@@ -1,7 +1,8 @@
 use serde_json::{json, Value};
 use std::env;
 use std::thread::sleep;
-use std::time::Duration;
+use std::time::{Duration, Instant};
+use std::sync::{Mutex, OnceLock};
 
 #[derive(Clone)]
 pub struct OllamaClient {
@@ -9,6 +10,65 @@ pub struct OllamaClient {
     model: String,
     api_key: Option<String>,
 }
+
+struct RateLimiter {
+    window_start: Instant,
+    used: u64,
+    window_secs: u64,
+    limit: u64,
+}
+
+impl RateLimiter {
+    fn new(limit: u64, window_secs: u64) -> Self {
+        RateLimiter {
+            window_start: Instant::now(),
+            used: 0,
+            window_secs,
+            limit,
+        }
+    }
+
+    // Try to reserve `need` tokens. Returns Ok(()) if reserved, Err(wait_duration) if not.
+    fn try_reserve(&mut self, need: u64) -> Result<(), Duration> {
+        let elapsed = self.window_start.elapsed().as_secs_f64();
+        if elapsed >= (self.window_secs as f64) {
+            // reset window
+            self.window_start = Instant::now();
+            self.used = 0;
+        }
+        if need > self.limit {
+            // single request would exceed limit: signal long wait (caller may reduce tokens)
+            return Err(Duration::from_secs(self.window_secs));
+        }
+        if self.used + need <= self.limit {
+            self.used += need;
+            return Ok(());
+        }
+        // not enough tokens left in this window; compute wait until reset
+        let wait_secs = self.window_secs.saturating_sub(self.window_start.elapsed().as_secs());
+        Err(Duration::from_secs(wait_secs + 1)) // add 1s safety margin
+    }
+
+    // release previously reserved tokens (e.g., on 429 or failure)
+    fn release(&mut self, qty: u64) {
+        if self.used >= qty {
+            self.used -= qty;
+        } else {
+            self.used = 0;
+        }
+    }
+
+    fn time_until_reset(&self) -> Duration {
+        let elapsed = self.window_start.elapsed().as_secs();
+        if elapsed >= self.window_secs {
+            Duration::ZERO
+        } else {
+            Duration::from_secs(self.window_secs - elapsed + 1)
+        }
+    }
+}
+
+static GLOBAL_RATE_LIMITER: OnceLock<Mutex<RateLimiter>> = OnceLock::new();
 
 impl OllamaClient {
     pub fn new(model_override: Option<&str>) -> Self {
@@ -33,6 +93,20 @@ impl OllamaClient {
             (ep, mdl)
         };
 
+        // ensure global rate limiter exists (only matters if using Groq)
+        if groq_key.is_some() {
+            let tpm_limit = env::var("GROQ_TPM_LIMIT")
+                .ok()
+                .and_then(|s| s.parse::<u64>().ok())
+                .unwrap_or(6000);
+            let window_secs = env::var("GROQ_RATE_WINDOW_SECS")
+                .ok()
+                .and_then(|s| s.parse::<u64>().ok())
+                .unwrap_or(60);
+            GLOBAL_RATE_LIMITER.get_or_init(|| Mutex::new(RateLimiter::new(tpm_limit, window_secs)));
+            // Note: we ignore the returned lock here; it will be used at request time.
+        }
+
         OllamaClient {
             endpoint,
             model,
@@ -45,18 +119,47 @@ impl OllamaClient {
             .timeout(std::time::Duration::from_secs(300))
             .build();
 
-        // تباعد استباقي بين الطلبات (فقط عند استخدام Groq، الذي له حد صارم
-        // للتوكنات في الدقيقة). هذا يمنع تكدّس عدة طلبات متتالية في نفس
-        // الدقيقة ويقلل الاصطدام بحد الـ rate limit من الأساس، بدل الاعتماد
-        // فقط على إعادة المحاولة بعد الفشل.
+        // If using Groq, add a small proactive pause to avoid tight bursts from same instance
         if self.api_key.is_some() {
-            sleep(Duration::from_secs(3));
+            // default short pause between sequential requests from same thread
+            sleep(Duration::from_millis(500));
         }
 
         let max_attempts = 6;
         for attempt in 0..max_attempts {
-            let (url, body) = if let Some(ref api_key) = self.api_key {
-                let _ = api_key;
+            // estimate tokens needed for this request
+            // rough estimate: tokens in prompt ~ chars/4, plus response tokens = GROQ_MAX_TOKENS
+            let prompt_tokens_est = (prompt.len() as u64 / 4).max(1);
+            let max_resp_tokens = env::var("GROQ_MAX_TOKENS")
+                .ok()
+                .and_then(|s| s.parse::<u64>().ok())
+                .unwrap_or(2048);
+            let need_tokens = prompt_tokens_est.saturating_add(max_resp_tokens);
+
+            // If using Groq, attempt to reserve tokens globally before sending
+            let mut reserved = false;
+            if self.api_key.is_some() {
+                if let Some(lock) = GLOBAL_RATE_LIMITER.get() {
+                    loop {
+                        let mut rl = lock.lock().unwrap();
+                        match rl.try_reserve(need_tokens) {
+                            Ok(()) => {
+                                reserved = true;
+                                break;
+                            }
+                            Err(wait) => {
+                                let wait = wait;
+                                eprintln!("Global TPM exhausted, waiting {:.1}s before trying to send...", wait.as_secs_f64());
+                                drop(rl);
+                                sleep(wait);
+                                // then loop and try again
+                            }
+                        }
+                    }
+                }
+            }
+
+            let (url, body) = if let Some(ref _api_key) = self.api_key {
                 let u = self.endpoint.clone();
                 let b = json!({
                     "model": self.model,
@@ -64,7 +167,7 @@ impl OllamaClient {
                         {"role": "user", "content": prompt}
                     ],
                     "temperature": 0.7,
-                    "max_tokens": 2048
+                    "max_tokens": max_resp_tokens
                 });
                 (u, b)
             } else {
@@ -97,25 +200,31 @@ impl OllamaClient {
                         .map_err(|e| format!("Failed to parse response JSON: {e}"))?;
 
                     if self.api_key.is_some() {
-                        return parsed["choices"][0]["message"]["content"]
+                        let txt = parsed["choices"][0]["message"]["content"]
                             .as_str()
                             .map(|s| s.trim().to_string())
                             .ok_or_else(|| "Groq response contains no content text.".to_string());
+                        return txt;
                     } else {
-                        return parsed["response"]
+                        let txt = parsed["response"]
                             .as_str()
                             .map(|s| s.trim().to_string())
                             .ok_or_else(|| "Ollama response contains no response field.".to_string());
+                        return txt;
                     }
                 }
                 Err(ureq::Error::Status(429, resp)) => {
+                    // free reserved tokens, if any
+                    if reserved {
+                        if let Some(lock) = GLOBAL_RATE_LIMITER.get() {
+                            let mut rl = lock.lock().unwrap();
+                            rl.release(need_tokens);
+                        }
+                    }
                     let text = resp.into_string().unwrap_or_default();
-                    // نضيف ثانية إضافية كهامش أمان فوق ما تطلبه Groq بالضبط،
-                    // لأن الالتزام الحرفي بالرقم أحياناً غير كافٍ إذا كانت
-                    // ساعة الخادم والعميل غير متطابقتين تماماً.
                     let wait_secs = parse_retry_seconds(&text).unwrap_or(8.0) + 1.0;
                     eprintln!(
-                        "Rate limited (attempt {}). Waiting {:.1}s...",
+                        "Rate limited by provider (attempt {}). Waiting {:.1}s...",
                         attempt + 1,
                         wait_secs
                     );
@@ -123,8 +232,16 @@ impl OllamaClient {
                     if attempt == max_attempts - 1 {
                         return Err(format!("Rate limit exceeded after {} attempts", max_attempts));
                     }
+                    // continue to next attempt (backoff loop)
                 }
                 Err(other) => {
+                    // on other errors, if we reserved tokens, release them
+                    if reserved {
+                        if let Some(lock) = GLOBAL_RATE_LIMITER.get() {
+                            let mut rl = lock.lock().unwrap();
+                            rl.release(need_tokens);
+                        }
+                    }
                     return Err(format!("API request failed: {}", other));
                 }
             }
