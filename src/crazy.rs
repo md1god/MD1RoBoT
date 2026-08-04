@@ -1,6 +1,6 @@
 use crate::brain::{Brain, TaskType, ThoughtRequest};
 use crate::protocol::{MutationProposal, AgentRole, EvolutionContext, Hypothesis};
-use serde_json;
+use serde_json::{self, Value, Map};
 use uuid::Uuid;
 
 pub struct Crazy;
@@ -69,7 +69,12 @@ impl Crazy {
             let start = response.find('{').ok_or("No JSON object in response")?;
             let end = response.rfind('}').ok_or("JSON object incomplete")?;
             let json_str = &response[start..=end];
-            let mut proposal: MutationProposal = serde_json::from_str(json_str)
+
+            let raw_value: Value = serde_json::from_str(json_str)
+                .map_err(|e| format!("Invalid MutationProposal JSON: {e}"))?;
+            let sanitized = sanitize_mutation_json(raw_value, hyp);
+
+            let mut proposal: MutationProposal = serde_json::from_value(sanitized)
                 .map_err(|e| format!("Invalid MutationProposal: {e}"))?;
             proposal.hypothesis = hyp.clone();
             proposals.push(proposal);
@@ -119,4 +124,106 @@ impl Crazy {
         tags.dedup();
         tags
     }
+}
+
+/// طبقة تطهير: تأخذ أي JSON خرج من نموذج لغوي وتجعله متوافقًا مع بنية
+/// MutationProposal بغض النظر عن نوعية الأخطاء التي يرتكبها النموذج:
+/// - حقول ناقصة تمامًا -> تُملأ بقيم افتراضية آمنة.
+/// - أرقام مكتوبة كنصوص أو العكس -> تُحوَّل للنوع الصحيح.
+/// - "hypothesis" كنص بدل كائن -> يُستبدل بالفرضية الحقيقية التي نملكها بالفعل.
+fn sanitize_mutation_json(raw: Value, hyp: &Hypothesis) -> Value {
+    let mut root = match raw {
+        Value::Object(m) => m,
+        _ => Map::new(),
+    };
+
+    // suggestion: لازم تكون object؛ لو مش موجودة أو نوعها غلط، نبدأ من فاضي
+    let suggestion_val = root.remove("suggestion").unwrap_or(Value::Null);
+    let mut suggestion = match suggestion_val {
+        Value::Object(m) => m,
+        _ => Map::new(),
+    };
+
+    coerce_string(&mut suggestion, "id", || Uuid::new_v4().to_string());
+    coerce_string(&mut suggestion, "agent", || "Crazy".to_string());
+    coerce_u64(&mut suggestion, "generation", hyp.generation);
+    coerce_string(&mut suggestion, "file_path", || String::new());
+    coerce_string(&mut suggestion, "language", || String::new());
+    coerce_string(&mut suggestion, "original_snippet", || String::new());
+    coerce_string(&mut suggestion, "new_snippet", || String::new());
+    coerce_string(&mut suggestion, "reason", || String::new());
+    coerce_string(&mut suggestion, "objective", || String::new());
+    coerce_f32(&mut suggestion, "confidence", 0.5);
+    coerce_f32(&mut suggestion, "priority", 0.5);
+    coerce_f32(&mut suggestion, "risk", 0.5);
+    coerce_string(&mut suggestion, "expected_gain", || String::new());
+
+    root.insert("suggestion".to_string(), Value::Object(suggestion));
+
+    // hypothesis: نتجاهل أي شيء أرسله النموذج ونستخدم الفرضية الحقيقية التي
+    // بنيناها بالفعل قبل الطلب (proposal.hypothesis يُستبدل بها لاحقًا على أي
+    // حال)، لكن لازم يكون هنا object صالح حتى ينجح الـ deserialize.
+    let mut hyp_obj = Map::new();
+    hyp_obj.insert("id".to_string(), Value::String(hyp.id.clone()));
+    hyp_obj.insert("statement".to_string(), Value::String(hyp.statement.clone()));
+    hyp_obj.insert(
+        "context_tags".to_string(),
+        Value::Array(hyp.context_tags.iter().map(|t| Value::String(t.clone())).collect()),
+    );
+    hyp_obj.insert(
+        "confidence".to_string(),
+        Value::Number(serde_json::Number::from_f64(hyp.confidence as f64).unwrap_or(0.into())),
+    );
+    hyp_obj.insert("generation".to_string(), Value::Number(hyp.generation.into()));
+    root.insert("hypothesis".to_string(), Value::Object(hyp_obj));
+
+    coerce_f64_root(&mut root, "expected_fitness_gain", 0.0);
+    coerce_f64_root(&mut root, "risk", 0.0);
+
+    Value::Object(root)
+}
+
+fn coerce_string(map: &mut Map<String, Value>, key: &str, default: impl FnOnce() -> String) {
+    let value = match map.get(key) {
+        Some(Value::String(s)) => Some(s.clone()),
+        Some(Value::Number(n)) => Some(n.to_string()),
+        Some(Value::Bool(b)) => Some(b.to_string()),
+        _ => None,
+    };
+    map.insert(key.to_string(), Value::String(value.unwrap_or_else(default)));
+}
+
+fn coerce_u64(map: &mut Map<String, Value>, key: &str, default: u64) {
+    let value = match map.get(key) {
+        Some(Value::Number(n)) => n.as_u64().or_else(|| n.as_f64().map(|f| f as u64)),
+        Some(Value::String(s)) => s.trim().parse::<u64>().ok(),
+        _ => None,
+    };
+    map.insert(key.to_string(), Value::Number(value.unwrap_or(default).into()));
+}
+
+fn coerce_f32(map: &mut Map<String, Value>, key: &str, default: f32) {
+    let value = match map.get(key) {
+        Some(Value::Number(n)) => n.as_f64(),
+        Some(Value::String(s)) => s.trim().parse::<f64>().ok(),
+        _ => None,
+    };
+    let f = value.unwrap_or(default as f64);
+    map.insert(
+        key.to_string(),
+        Value::Number(serde_json::Number::from_f64(f).unwrap_or(0.into())),
+    );
+}
+
+fn coerce_f64_root(map: &mut Map<String, Value>, key: &str, default: f64) {
+    let value = match map.get(key) {
+        Some(Value::Number(n)) => n.as_f64(),
+        Some(Value::String(s)) => s.trim().parse::<f64>().ok(),
+        _ => None,
+    };
+    let f = value.unwrap_or(default);
+    map.insert(
+        key.to_string(),
+        Value::Number(serde_json::Number::from_f64(f).unwrap_or(0.into())),
+    );
 }
