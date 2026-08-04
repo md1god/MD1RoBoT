@@ -167,7 +167,9 @@ impl EvolutionLab {
     }
 }
 
-// دالة نسخ المجلدات (كما هي) مع تجاهل بعض الملفات الكبيرة
+// دالة نسخ المجلدات: تستبعد المجلدات/الملفات التي لا يجب أن تدخل الـ sandbox
+// (بما فيها أي مخلفات "temp_lab_*" من تجارب سابقة فشلت، لمنع تعشيش
+// المسارات الذي يسبب "اسم الملف طويل جداً / OS error 36").
 fn copy_dir(src: &str, dst: &str) -> std::io::Result<()> {
     fs::create_dir_all(dst)?;
     for entry in fs::read_dir(src)? {
@@ -175,10 +177,24 @@ fn copy_dir(src: &str, dst: &str) -> std::io::Result<()> {
         let ty = entry.file_type()?;
         let src_path = entry.path();
         let dst_path = Path::new(dst).join(entry.file_name());
+
+        let name = entry.file_name();
+        let name_str = name.to_string_lossy();
+        let is_excluded = name_str == "target"
+            || name_str == ".git"
+            || name_str.starts_with("temp_lab")
+            || name_str == "backups"
+            || name_str == "memory"
+            || name_str.ends_with(".db")
+            || name_str.ends_with(".db-wal")
+            || name_str.ends_with(".db-shm");
+
+        if is_excluded {
+            continue;
+        }
+
         if ty.is_dir() {
-            if entry.file_name() != "target" && entry.file_name() != "temp_lab" && entry.file_name() != ".git" {
-                copy_dir(&src_path.to_string_lossy(), &dst_path.to_string_lossy())?;
-            }
+            copy_dir(&src_path.to_string_lossy(), &dst_path.to_string_lossy())?;
         } else {
             fs::copy(&src_path, &dst_path)?;
         }
