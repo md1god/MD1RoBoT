@@ -13,12 +13,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
-    services:
-      ollama:
-        image: ollama/ollama:latest
-        ports:
-          - 11434:11434
-
     env:
       DOCKER_IMAGE: dido599999/md1robot:${{ github.sha }}
 
@@ -69,29 +63,3 @@ jobs:
           use_ensemble = false
           ensemble_models = ["qwen2.5-coder:7b"]
           EOF
-
-      - name: انتظار جاهزية Ollama
-        run: |
-          for i in $(seq 1 30); do
-            if curl -sf http://localhost:11434/ >/dev/null; then
-              echo "Ollama جاهز."
-              break
-            fi
-            echo "انتظار Ollama... ($i)"
-            sleep 2
-          done
-
-      - name: تحميل نموذج Ollama للتجربة
-        run: |
-          curl -sf http://localhost:11434/api/pull -d '{"name": "qwen2.5-coder:7b"}'
-
-      - name: تشغيل دورة تطور واحدة
-        run: |
-          docker run --rm \
-            --network host \
-            -v "${{ github.workspace }}/config.toml:/app/config.toml:ro" \
-            -v "${{ github.workspace }}/memory:/app/memory" \
-            -v "${{ github.workspace }}/backups:/app/backups" \
-            -e OLLAMA_HOST=http://localhost:11434 \
-            ${{ env.DOCKER_IMAGE }} \
-            /app/md1robot --run-once
