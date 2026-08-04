@@ -11,9 +11,9 @@ impl ModelRouter {
     pub fn new(config: AppConfig) -> Self {
         let mut clients = HashMap::new();
 
-        // إذا كان هناك مفتاح Hugging Face في متغيرات البيئة، نستخدمه لكل اللغات
-        if let Ok(hf_key) = std::env::var("HF_API_KEY") {
-            let client = OllamaClient::new(None, Some(&hf_key));
+        // إذا وُجد مفتاح Groq، نستخدم عميل واحد لجميع اللغات
+        if std::env::var("GROQ_API_KEY").is_ok() {
+            let client = OllamaClient::new(None); // سيختار Groq تلقائياً عند وجود المفتاح
             clients.insert("rust".into(), client.clone());
             clients.insert("python".into(), client.clone());
             clients.insert("javascript".into(), client.clone());
@@ -21,12 +21,12 @@ impl ModelRouter {
             clients.insert("cpp".into(), client.clone());
             clients.insert("default".into(), client);
         } else {
-            // استخدم Ollama المحلي مع النماذج المعرفة في config.toml
+            // السلوك الأصلي: Ollama لكل لغة
             for (lang, model) in &config.models {
-                clients.insert(lang.clone(), OllamaClient::new(Some(model), None));
+                clients.insert(lang.clone(), OllamaClient::new(Some(model)));
             }
             if !clients.contains_key("default") {
-                clients.insert("default".into(), OllamaClient::new(Some("qwen2.5-coder:7b"), None));
+                clients.insert("default".into(), OllamaClient::new(Some("qwen2.5-coder:7b")));
             }
         }
 
