@@ -11,7 +11,7 @@ permissions:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 180
 
     env:
       DOCKER_IMAGE: dido599999/md1robot:${{ github.sha }}
@@ -44,22 +44,58 @@ jobs:
             dido599999/md1robot:latest
             ${{ env.DOCKER_IMAGE }}
 
-      - name: إنشاء ملف الإعدادات
+      - name: إنشاء شبكة Docker محليّة
         run: |
-          cat > config.toml <<'EOF'
-          [evolution]
-          max_cycles = 1
-          health_threshold = 0.4
-          [fitness_weights]
-          performance = 0.35
-          memory = 0.20
-          reliability = 0.30
-          maintainability = 0.15
-          [models]
-          rust = "qwen2.5-coder:7b"
-          python = "qwen2.5-coder:7b"
-          default = "qwen2.5-coder:7b"
-          [kreza]
-          use_ensemble = false
-          ensemble_models = ["qwen2.5-coder:7b"]
-          EOF
+          docker network create md1net || true
+
+      - name: بدء حاوية Ollama
+        run: |
+          mkdir -p ${{ github.workspace }}/ollama_data
+          docker run -d --name ollama --network md1net -p 11434:11434 \
+            -v "${{ github.workspace }}/ollama_data:/root/.ollama" \
+            ollama/ollama:latest
+
+      - name: انتظار جاهزية Ollama
+        run: |
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:11434/ >/dev/null; then
+              echo "Ollama جاهز."
+              break
+            fi
+            echo "انتظار Ollama... ($i)"
+            sleep 5
+          done
+
+      - name: تحميل نموذج Ollama (قد يستغرق وقتاً طويلاً)
+        run: |
+          echo 'سحب النموذج qwen2.5-coder:7b'
+          # نستخدم POST كما في API Ollama
+          for i in $(seq 1 6); do
+            curl -sS -X POST -H "Content-Type: application/json" \
+              -d '{"name":"qwen2.5-coder:7b"}' \
+              http://localhost:11434/api/pull && break || true
+            echo "محاولة سحب النموذج: $i/6 - الانتظار قبل المحاولة التالية..."
+            sleep 30
+          done
+
+      - name: سحب صورة MD1RoBoT من Docker Hub (ضمان وجودها محلياً)
+        run: |
+          docker pull ${{ env.DOCKER_IMAGE }} || docker pull dido599999/md1robot:latest
+
+      - name: تشغيل دورة تطور واحدة داخل حاوية باستخدام الشبكة المشتركة
+        run: |
+          docker run --rm \
+            --network md1net \
+            -v "${{ github.workspace }}/config.toml:/app/config.toml:ro" \
+            -v "${{ github.workspace }}/memory:/app/memory" \
+            -v "${{ github.workspace }}/backups:/app/backups" \
+            -v "${{ github.workspace }}/ollama_data:/root/.ollama" \
+            -e OLLAMA_HOST=http://ollama:11434 \
+            ${{ env.DOCKER_IMAGE }} \
+            /app/md1robot --run-once
+
+      - name: تنظيف حاويات Docker (محاولة إيقاف ollama)
+        if: always()
+        run: |
+          docker rm -f ollama || true
+          docker network rm md1net || true
