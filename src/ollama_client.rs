@@ -45,7 +45,6 @@ impl OllamaClient {
             .timeout(std::time::Duration::from_secs(300))
             .build();
 
-        // محاولات متكررة عند خطأ 429
         let max_attempts = 5;
         for attempt in 0..max_attempts {
             let (url, body) = if let Some(ref api_key) = self.api_key {
@@ -102,7 +101,6 @@ impl OllamaClient {
                 }
                 Err(ureq::Error::Status(429, resp)) => {
                     let text = resp.into_string().unwrap_or_default();
-                    // استخراج مدة الانتظار من رسالة الخطأ
                     let wait_secs = parse_retry_seconds(&text).unwrap_or(5.0);
                     eprintln!(
                         "Rate limited (attempt {}). Waiting {:.1}s...",
@@ -113,7 +111,6 @@ impl OllamaClient {
                     if attempt == max_attempts - 1 {
                         return Err(format!("Rate limit exceeded after {} attempts", max_attempts));
                     }
-                    // وإلا يعيد المحاولة تلقائياً
                 }
                 Err(other) => {
                     return Err(format!("API request failed: {}", other));
@@ -124,7 +121,6 @@ impl OllamaClient {
     }
 }
 
-/// استخراج عدد الثواني من رسالة "Please try again in X.XXs."
 fn parse_retry_seconds(error_text: &str) -> Option<f64> {
     let prefix = "Please try again in ";
     if let Some(start) = error_text.find(prefix) {
