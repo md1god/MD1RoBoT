@@ -1,6 +1,25 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use crate::db::{Fitness, Phenotype};
 use crate::genome::GenomeNode;
+
+/// يقبل هذا الحقل رقمًا (1) أو نصًا يمثل رقمًا ("1") من مخرجات النموذج،
+/// ويحوّله دائمًا إلى u64. يحمي من أخطاء "invalid type: string, expected u64"
+/// عندما يرجّع النموذج اللغوي الرقم كنص.
+fn lenient_u64<'de, D>(deserializer: D) -> Result<u64, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum NumOrStr {
+        Num(u64),
+        Str(String),
+    }
+    match NumOrStr::deserialize(deserializer)? {
+        NumOrStr::Num(n) => Ok(n),
+        NumOrStr::Str(s) => s.trim().parse::<u64>().map_err(serde::de::Error::custom),
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum AgentRole {
@@ -31,6 +50,7 @@ impl AgentRole {
 pub struct Suggestion {
     pub id: String,
     pub agent: AgentRole,
+    #[serde(deserialize_with = "lenient_u64")]
     pub generation: u64,
     pub file_path: String,
     pub language: String,
@@ -50,6 +70,7 @@ pub struct Hypothesis {
     pub statement: String,
     pub context_tags: Vec<String>,
     pub confidence: f32,
+    #[serde(deserialize_with = "lenient_u64")]
     pub generation: u64,
 }
 
