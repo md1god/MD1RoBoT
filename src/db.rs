@@ -133,7 +133,7 @@ impl Db {
                 timestamp TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
             INSERT OR IGNORE INTO state (id, generation, age, curiosity) VALUES (1, 0, 1, 1.0);
-            INSERT OR IIGNORE INTO evolution_state (id, current_generation, best_fitness, best_generation) VALUES (1, 0, 0.0, 0);
+            INSERT OR IGNORE INTO evolution_state (id, current_generation, best_fitness, best_generation) VALUES (1, 0, 0.0, 0);
             ",
         )?;
         Ok(Db { conn: Arc::new(Mutex::new(conn)) })
