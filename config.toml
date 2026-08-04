@@ -1,5 +1,5 @@
 [evolution]
-max_cycles = 20
+max_cycles = 5
 health_threshold = 0.4
 
 [fitness_weights]
@@ -9,21 +9,13 @@ reliability = 0.30
 maintainability = 0.15
 
 [models]
-rust = "deepseek-coder:6.7b"
+rust = "qwen2.5-coder:7b"
 python = "qwen2.5-coder:7b"
 javascript = "qwen2.5-coder:7b"
-c = "deepseek-coder:6.7b"
-cpp = "deepseek-coder:6.7b"
+c = "qwen2.5-coder:7b"
+cpp = "qwen2.5-coder:7b"
 default = "qwen2.5-coder:7b"
-assembly = "deepseek-coder:6.7b"
-shell = "qwen2.5-coder:7b"
 
 [kreza]
-use_ensemble = true
-ensemble_models = ["qwen2.5-coder:7b", "deepseek-coder:6.7b"]
-
-[beast]
-allow_network = true
-max_mutations_per_hour = 100
-lite_mode = false
-self_preservation = "minimal"
+use_ensemble = false
+ensemble_models = ["qwen2.5-coder:7b"]
