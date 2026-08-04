@@ -30,12 +30,23 @@ use evolution::EvolutionController;
 use planner::Planner;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // 1. التقاط أي انهيار مفاجئ وطباعته بوضوح في سجلات Render
+    std::panic::set_hook(Box::new(|info| {
+        eprintln!("CRITICAL PANIC: {info}");
+    }));
+
     eprintln!("Starting MD1RoBoT...");
     let args: Vec<String> = std::env::args().collect();
     let run_once = args.contains(&"--run-once".to_string());
 
-    eprintln!("Loading config...");
-    let config = config_loader::load_config("config.toml");
+    // 2. قراءة الإعدادات بمسار آمن داخل الحاوية أو الجهاز المحلي
+    let config_path = if std::path::Path::new("/app/config.toml").exists() {
+        "/app/config.toml"
+    } else {
+        "config.toml"
+    };
+    eprintln!("Loading config from {config_path}...");
+    let config = config_loader::load_config(config_path);
     eprintln!("Config loaded successfully.");
 
     eprintln!("Opening database...");
