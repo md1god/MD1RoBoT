@@ -1,44 +1,6 @@
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
 use crate::db::{Fitness, Phenotype};
 use crate::genome::GenomeNode;
-
-/// يقبل هذا الحقل رقمًا (1) أو نصًا يمثل رقمًا ("1") من مخرجات النموذج،
-/// ويحوّله دائمًا إلى u64. يحمي من أخطاء "invalid type: string, expected u64".
-fn lenient_u64<'de, D>(deserializer: D) -> Result<u64, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    #[derive(Deserialize)]
-    #[serde(untagged)]
-    enum NumOrStr {
-        Num(u64),
-        Str(String),
-    }
-    match NumOrStr::deserialize(deserializer)? {
-        NumOrStr::Num(n) => Ok(n),
-        NumOrStr::Str(s) => s.trim().parse::<u64>().map_err(serde::de::Error::custom),
-    }
-}
-
-/// يقبل هذا الحقل نصًا ("1") أو رقمًا (1) من مخرجات النموذج،
-/// ويحوّله دائمًا إلى String. يحمي من أخطاء "invalid type: integer, expected a string".
-fn lenient_string<'de, D>(deserializer: D) -> Result<String, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    #[derive(Deserialize)]
-    #[serde(untagged)]
-    enum StrOrNum {
-        Str(String),
-        Int(i64),
-        Float(f64),
-    }
-    match StrOrNum::deserialize(deserializer)? {
-        StrOrNum::Str(s) => Ok(s),
-        StrOrNum::Int(n) => Ok(n.to_string()),
-        StrOrNum::Float(f) => Ok(f.to_string()),
-    }
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum AgentRole {
@@ -67,39 +29,44 @@ impl AgentRole {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Suggestion {
-    #[serde(deserialize_with = "lenient_string")]
+    #[serde(default)]
     pub id: String,
     pub agent: AgentRole,
-    #[serde(deserialize_with = "lenient_u64")]
+    #[serde(default)]
     pub generation: u64,
-    #[serde(deserialize_with = "lenient_string")]
+    #[serde(default)]
     pub file_path: String,
-    #[serde(deserialize_with = "lenient_string")]
+    #[serde(default)]
     pub language: String,
-    #[serde(deserialize_with = "lenient_string")]
+    #[serde(default)]
     pub original_snippet: String,
-    #[serde(deserialize_with = "lenient_string")]
+    #[serde(default)]
     pub new_snippet: String,
-    #[serde(deserialize_with = "lenient_string")]
+    #[serde(default)]
     pub reason: String,
-    #[serde(deserialize_with = "lenient_string")]
+    #[serde(default)]
     pub objective: String,
+    #[serde(default)]
     pub confidence: f32,
+    #[serde(default)]
     pub priority: f32,
+    #[serde(default)]
     pub risk: f32,
-    #[serde(deserialize_with = "lenient_string")]
+    #[serde(default)]
     pub expected_gain: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Hypothesis {
-    #[serde(deserialize_with = "lenient_string")]
+    #[serde(default)]
     pub id: String,
-    #[serde(deserialize_with = "lenient_string")]
+    #[serde(default)]
     pub statement: String,
+    #[serde(default)]
     pub context_tags: Vec<String>,
+    #[serde(default)]
     pub confidence: f32,
-    #[serde(deserialize_with = "lenient_u64")]
+    #[serde(default)]
     pub generation: u64,
 }
 
@@ -107,7 +74,9 @@ pub struct Hypothesis {
 pub struct MutationProposal {
     pub suggestion: Suggestion,
     pub hypothesis: Hypothesis,
+    #[serde(default)]
     pub expected_fitness_gain: f64,
+    #[serde(default)]
     pub risk: f64,
 }
 
