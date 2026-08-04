@@ -17,14 +17,15 @@ services:
     depends_on:
       - ollama
     environment:
-      - OLLAMA_HOST=ollama:11434
+      - OLLAMA_HOST=http://ollama:11434
+      - PORT=10000
     volumes:
       - ./config.toml:/app/config.toml:ro
       - ./memory:/app/memory
       - ./backups:/app/backups
       - ./ollama_data:/root/.ollama
     ports:
-      - "8080:8080"
+      - "10000:10000"
     restart: unless-stopped
 
 volumes:
