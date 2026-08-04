@@ -13,8 +13,9 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 RUN pip3 install semgrep --break-system-packages
 COPY --from=builder /app/target/release/md1robot /app/md1robot
+RUN chmod +x /app/md1robot && (ldd /app/md1robot || true)
 COPY config.toml /app/config.toml
 WORKDIR /app
 VOLUME ["/app/memory", "/app/backups", "/root/.ollama"]
 EXPOSE 10000
-CMD ["/app/md1robot"]
+CMD ["sh", "-c", "echo '--- MD1RoBoT boot ---'; /app/md1robot; code=$?; echo \"--- process ended, exit code $code ---\"; exit $code"]
