@@ -28,7 +28,7 @@ impl OllamaClient {
             let mdl = model_override
                 .map(|m| m.to_string())
                 .unwrap_or_else(|| {
-                    env::var("OLLAMA_MODEL").unwrap_or_else(|| "qwen2.5-coder:7b".to_string())
+                    env::var("OLLAMA_MODEL").unwrap_or_else(|_| "qwen2.5-coder:7b".to_string())
                 });
             (ep, mdl)
         };
@@ -48,6 +48,7 @@ impl OllamaClient {
         let max_attempts = 5;
         for attempt in 0..max_attempts {
             let (url, body) = if let Some(ref api_key) = self.api_key {
+                let _ = api_key;
                 let u = self.endpoint.clone();
                 let b = json!({
                     "model": self.model,
