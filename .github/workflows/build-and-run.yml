@@ -1,82 +1,107 @@
-name: MD1RoBoT CI/CD
+use serde_json::{json, Value};
+use std::env;
 
-on:
-  push:
-    branches: ["main", "master"]
-  workflow_dispatch:
+#[derive(Clone)]
+pub struct OllamaClient {
+    endpoint: String,
+    model: String,
+    api_key: Option<String>,
+}
 
-permissions:
-  contents: read
+impl OllamaClient {
+    pub fn new(model_override: Option<&str>) -> Self {
+        let groq_key = env::var("GROQ_API_KEY").ok();
+        
+        let (endpoint, model) = if groq_key.is_some() {
+            let ep = "https://api.groq.com/openai/v1/chat/completions".to_string();
+            let mdl = model_override
+                .map(|m| m.to_string())
+                .unwrap_or_else(|| {
+                    env::var("GROQ_MODEL").unwrap_or_else(|_| "llama-3.1-8b-instant".to_string())
+                });
+            (ep, mdl)
+        } else {
+            let ep = env::var("OLLAMA_HOST")
+                .unwrap_or_else(|_| "http://localhost:11434".to_string());
+            let mdl = model_override
+                .map(|m| m.to_string())
+                .unwrap_or_else(|| {
+                    env::var("OLLAMA_MODEL").unwrap_or_else(|| "qwen2.5-coder:7b".to_string())
+                });
+            (ep, mdl)
+        };
 
-jobs:
-  build-and-test:
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
+        OllamaClient {
+            endpoint,
+            model,
+            api_key: groq_key,
+        }
+    }
 
-    services:
-      ollama:
-        image: ollama/ollama:latest
-        ports:
-          - 11434:11434
-        volumes:
-          - ollama_data:/root/.ollama
+    pub fn generate(&self, prompt: &str) -> Result<String, String> {
+        let client = ureq::AgentBuilder::new()
+            .timeout(std::time::Duration::from_secs(300))
+            .build();
 
-    env:
-      DOCKER_IMAGE: dido599999/md1robot:${{ github.sha }}
+        let (url, body) = if let Some(ref api_key) = self.api_key {
+            let u = self.endpoint.clone();
+            let b = json!({
+                "model": self.model,
+                "messages": [
+                    {"role": "user", "content": prompt}
+                ],
+                "temperature": 0.7,
+                "max_tokens": 2048
+            });
+            let _ = api_key; // تجنب تحذير المتغير غير المستخدم
+            (u, b)
+        } else {
+            let u = format!("{}/api/generate", self.endpoint);
+            let b = json!({
+                "model": self.model,
+                "prompt": prompt,
+                "stream": false
+            });
+            (u, b)
+        };
 
-    steps:
-      - name: سحب الكود من المستودع
-        uses: actions/checkout@v4
+        let mut request = client.post(&url);
 
-      - name: إعداد Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        if let Some(ref api_key) = self.api_key {
+            request = request
+                .set("Authorization", &format!("Bearer {}", api_key))
+                .set("Content-Type", "application/json");
+        } else {
+            request = request
+                .set("Bypass-Tunnel-Reminder", "true")
+                .set("Content-Type", "application/json");
+        }
 
-      - name: تسجيل الدخول إلى Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: dido599999
-          password: ${{ secrets.DOCKER_PAT }}
+        let response = request.send_json(body);
 
-      - name: بناء ورفع صورة Docker
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          push: true
-          tags: |
-            dido599999/md1robot:latest
-            ${{ env.DOCKER_IMAGE }}
+        match response {
+            Ok(resp) => {
+                let parsed: Value = resp
+                    .into_json()
+                    .map_err(|e| format!("Failed to parse response JSON: {e}"))?;
 
-      - name: إنشاء ملف الإعدادات
-        run: |
-          cat > config.toml <<'EOF'
-          [evolution]
-          max_cycles = 1
-          health_threshold = 0.4
-          [fitness_weights]
-          performance = 0.35
-          memory = 0.20
-          reliability = 0.30
-          maintainability = 0.15
-          [models]
-          rust = "qwen2.5-coder:7b"
-          python = "qwen2.5-coder:7b"
-          default = "qwen2.5-coder:7b"
-          [kreza]
-          use_ensemble = false
-          ensemble_models = ["qwen2.5-coder:7b"]
-          EOF
-
-      - name: تحميل نموذج Ollama للتجربة
-        run: |
-          curl http://localhost:11434/api/pull -d '{"name": "qwen2.5-coder:7b"}'
-
-      - name: تشغيل دورة تطور واحدة
-        run: |
-          docker run --rm \
-            --network host \
-            -v "${{ github.workspace }}/config.toml:/app/config.toml:ro" \
-            -v "${{ github.workspace }}/memory:/app/memory" \
-            -v "${{ github.workspace }}/backups:/app/backups" \
-            -e OLLAMA_HOST=http://localhost:11434 \
-            ${{ env.DOCKER_IMAGE }} \
-            /app/md1robot --run-once
+                if self.api_key.is_some() {
+                    parsed["choices"][0]["message"]["content"]
+                        .as_str()
+                        .map(|s| s.trim().to_string())
+                        .ok_or_else(|| "Groq response contains no content text.".to_string())
+                } else {
+                    parsed["response"]
+                        .as_str()
+                        .map(|s| s.trim().to_string())
+                        .ok_or_else(|| "Ollama response contains no response field.".to_string())
+                }
+            }
+            Err(ureq::Error::Status(code, resp)) => {
+                let text = resp.into_string().unwrap_or_default();
+                Err(format!("API error ({code}): {text}"))
+            }
+            Err(e) => Err(format!("Failed to connect to API endpoint: {e}")),
+        }
+    }
+}
