@@ -53,7 +53,7 @@ pub async fn start_api(db: Db, planner: Planner, config: AppConfig) -> std::io::
             .route("/api/status", web::get().to(status))
             .route("/api/run_cycle", web::post().to(run_cycle))
     })
-    .bind("0.0.0.0:8080")?
+    .bind(format!("0.0.0.0:{}", std::env::var("PORT").unwrap_or_else(|_| "8080".to_string())))?
     .run()
     .await
 }
