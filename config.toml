@@ -19,3 +19,5 @@ default = "qwen2.5-coder:7b"
 [kreza]
 use_ensemble = false
 ensemble_models = ["qwen2.5-coder:7b"]
+
+groq_api_key = ""
