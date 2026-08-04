@@ -11,7 +11,7 @@ permissions:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 240
 
     env:
       DOCKER_IMAGE: dido599999/md1robot:${{ github.sha }}
@@ -19,6 +19,12 @@ jobs:
     steps:
       - name: سحب الكود من المستودع
         uses: actions/checkout@v4
+
+      - name: تحقق من Docker (debug)
+        run: |
+          docker --version || true
+          docker info || true
+          df -h || true
 
       - name: إعداد Rust toolchain (لتوليد Cargo.lock)
         uses: dtolnay/rust-toolchain@stable
@@ -55,6 +61,9 @@ jobs:
             -v "${{ github.workspace }}/ollama_data:/root/.ollama" \
             ollama/ollama:latest
 
+      - name: طباعة حالة الحاويات (بعد بدء Ollama)
+        run: docker ps -a || true
+
       - name: انتظار جاهزية Ollama
         run: |
           for i in $(seq 1 60); do
@@ -65,37 +74,75 @@ jobs:
             echo "انتظار Ollama... ($i)"
             sleep 5
           done
+          # إذا لم يصبح جاهزاً بعد الوقت المسموح، نطبع لوج للاطّلاع
+          if ! curl -sf http://localhost:11434/ >/dev/null; then
+            echo "Ollama لم يعلن جاهزيته بعد الانتظار. طباعة لوجات ollama:" 
+            docker logs ollama || true
+            exit 1
+          fi
 
-      - name: تحميل نموذج Ollama (قد يستغرق وقتاً طويلاً)
+      - name: تحميل نموذج Ollama (محاولات متعددة)
         run: |
           echo 'سحب النموذج qwen2.5-coder:7b'
-          # نستخدم POST كما في API Ollama
-          for i in $(seq 1 6); do
-            curl -sS -X POST -H "Content-Type: application/json" \
+          for i in $(seq 1 8); do
+            resp=$(curl -sS -X POST -H "Content-Type: application/json" \
               -d '{"name":"qwen2.5-coder:7b"}' \
-              http://localhost:11434/api/pull && break || true
-            echo "محاولة سحب النموذج: $i/6 - الانتظار قبل المحاولة التالية..."
-            sleep 30
+              http://localhost:11434/api/pull || true)
+            echo "محاولة $i: $resp"
+            # نتحقّق إن الاستجابة تبدو ناجحة
+            echo "$resp" | grep -i "error\|failed\|not found" >/dev/null && sleep 30 || break
           done
+
+      - name: عرض صور Docker المحلية (debug)
+        run: docker images | head -n 50 || true
 
       - name: سحب صورة MD1RoBoT من Docker Hub (ضمان وجودها محلياً)
         run: |
           docker pull ${{ env.DOCKER_IMAGE }} || docker pull dido599999/md1robot:latest
 
-      - name: تشغيل دورة تطور واحدة داخل حاوية باستخدام الشبكة المشتركة
+      - name: تشغيل دورة تطور واحدة داخل حاوية باستخدام الشبكة المشتركة (وتسجيل لوجات مفصّلة)
         run: |
-          docker run --rm \
-            --network md1net \
+          # نشغّل الحاوية بدون --rm حتى نتمكن من الحصول على لوجاتها بعد الانتهاء
+          docker rm -f md1robot || true
+          docker run -d --name md1robot --network md1net \
             -v "${{ github.workspace }}/config.toml:/app/config.toml:ro" \
             -v "${{ github.workspace }}/memory:/app/memory" \
             -v "${{ github.workspace }}/backups:/app/backups" \
             -v "${{ github.workspace }}/ollama_data:/root/.ollama" \
             -e OLLAMA_HOST=http://ollama:11434 \
             ${{ env.DOCKER_IMAGE }} \
-            /app/md1robot --run-once
+            /app/md1robot --run-once || rc=$?; true
 
-      - name: تنظيف حاويات Docker (محاولة إيقاف ollama)
+          # ننتظر حتى تنتهي الحاوية أو حتى 3600 ثانية
+          total=0
+          while [ $total -lt 3600 ]; do
+            status=$(docker inspect -f '{{.State.Running}}' md1robot 2>/dev/null || echo false)
+            if [ "$status" = "false" ]; then
+              break
+            fi
+            sleep 5
+            total=$((total+5))
+          done
+
+          # نحصل على رمز الخروج ولوج الحاوية
+          rc=$(docker inspect -f '{{.State.ExitCode}}' md1robot 2>/dev/null || echo 0)
+          echo "md1robot exit code: $rc"
+          echo "---- md1robot logs ----"
+          docker logs md1robot || true
+          echo "---- ollama logs (tail) ----"
+          docker logs --tail 200 ollama || true
+
+          # تنظيف حاوية md1robot فقط
+          docker rm -f md1robot || true
+
+          if [ "$rc" != "0" ]; then
+            echo "دورة md1robot فشلت (exit code $rc)" >&2
+            exit $rc
+          fi
+
+      - name: تنظيف حاوية MD1RoBoT فقط (لا نوقف Ollama حسب الطلب)
         if: always()
         run: |
-          docker rm -f ollama || true
-          docker network rm md1net || true
+          echo "ملاحظة: لن نقوم بإيقاف Ollama أو إزالة الشبكة؛ سيتم ترك الخدمة تعمل كما طلبت."
+          echo "عرض آخر 200 سطر من لوج Ollama للاطّلاع دون إيقافها:"
+          docker logs --tail 200 ollama || true
