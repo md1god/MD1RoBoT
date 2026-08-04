@@ -13,7 +13,8 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 RUN pip3 install semgrep --break-system-packages
 COPY --from=builder /app/target/release/md1robot /app/md1robot
+COPY config.toml /app/config.toml
 WORKDIR /app
 VOLUME ["/app/memory", "/app/backups", "/root/.ollama"]
-EXPOSE 10000
+EXPOSE 8080
 CMD ["/app/md1robot"]
