@@ -5,19 +5,20 @@ use std::env;
 pub struct OllamaClient {
     endpoint: String,
     model: String,
-    api_key: Option<String>, // سيُستعمل فقط مع Hugging Face
+    api_key: Option<String>,   // يُستخدم مع Groq فقط
 }
 
 impl OllamaClient {
     pub fn new(model_override: Option<&str>) -> Self {
-        // إذا كان مفتاح Hugging Face موجوداً، نفعّله
-        if let Ok(hf_key) = env::var("HF_API_KEY") {
-            let model_id = model_override.unwrap_or("Qwen/Qwen2.5-Coder-1.5B");
-            let endpoint = format!("https://api-inference.huggingface.co/models/{}", model_id);
+        // إذا وُجد مفتاح Groq، نفعّل واجهة Groq
+        if let Ok(groq_key) = env::var("GROQ_API_KEY") {
+            // يمكن اختيار النموذج من متغير بيئة اختياري، وإلا نستخدم llama-3.1-8b-instant (سريع ومجاني)
+            let model = env::var("GROQ_MODEL")
+                .unwrap_or_else(|_| "llama-3.1-8b-instant".to_string());
             return OllamaClient {
-                endpoint,
-                model: model_id.to_string(),
-                api_key: Some(hf_key),
+                endpoint: "https://api.groq.com/openai/v1/chat/completions".to_string(),
+                model,
+                api_key: Some(groq_key),
             };
         }
 
@@ -37,14 +38,15 @@ impl OllamaClient {
     }
 
     pub fn generate(&self, prompt: &str) -> Result<String, String> {
-        // إذا كان لدينا مفتاح Hugging Face، استخدم واجهة HF
+        // إذا كان لدينا مفتاح Groq، استخدم Groq API (بصيغة Chat Completions)
         if let Some(api_key) = &self.api_key {
             let body = json!({
-                "inputs": prompt,
-                "parameters": {
-                    "max_new_tokens": 1024,
-                    "temperature": 0.7
-                }
+                "model": self.model,
+                "messages": [
+                    {"role": "user", "content": prompt}
+                ],
+                "temperature": 0.7,
+                "max_tokens": 1024
             });
 
             let response = ureq::post(&self.endpoint)
@@ -57,30 +59,17 @@ impl OllamaClient {
                 Ok(resp) => {
                     let parsed: Value = resp
                         .into_json()
-                        .map_err(|e| format!("Failed to parse HF response: {e}"))?;
-                    // HF يرجع مصفوفة فيها كائن generated_text
-                    if let Some(arr) = parsed.as_array() {
-                        if let Some(first) = arr.first() {
-                            first["generated_text"]
-                                .as_str()
-                                .map(|s| s.trim().to_string())
-                                .ok_or_else(|| "No generated_text in HF response".to_string())
-                        } else {
-                            Err("Empty response array from HF".to_string())
-                        }
-                    } else {
-                        // أحياناً يرجع كائناً مباشراً (حسب النموذج)
-                        parsed["generated_text"]
-                            .as_str()
-                            .map(|s| s.trim().to_string())
-                            .ok_or_else(|| "HF response missing generated_text".to_string())
-                    }
+                        .map_err(|e| format!("Failed to parse Groq response: {e}"))?;
+                    parsed["choices"][0]["message"]["content"]
+                        .as_str()
+                        .map(|s| s.trim().to_string())
+                        .ok_or_else(|| "No content in Groq response".to_string())
                 }
                 Err(ureq::Error::Status(code, resp)) => {
                     let text = resp.into_string().unwrap_or_default();
-                    Err(format!("HF error ({}): {}", code, text))
+                    Err(format!("Groq error ({}): {}", code, text))
                 }
-                Err(e) => Err(format!("Failed to connect to HF: {}", e)),
+                Err(e) => Err(format!("Failed to connect to Groq: {}", e)),
             };
         }
 
