@@ -1,45 +1,51 @@
-name: MD1RoBoT CI/CD
+name: MD1RoBoT Evolution Cycle
 
 on:
-  push:
-    branches: ["main", "master"]
+  schedule:
+    - cron: "*/20 * * * *"   # كل 20 دقيقة تقريبًا (GitHub ممكن يأخر شوية وقت الزحمة)
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write   # لازم "write" مش "read" عشان نقدر نعمل push
+
+concurrency:
+  group: md1robot-evolution
+  cancel-in-progress: false
 
 jobs:
-  build-and-push:
+  evolve:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-
-    env:
-      DOCKER_IMAGE: dido599999/md1robot:${{ github.sha }}
+    timeout-minutes: 15
 
     steps:
       - name: سحب الكود من المستودع
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: إعداد Rust toolchain (لتوليد Cargo.lock)
+      - name: إعداد Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: توليد أو تحديث Cargo.lock
-        run: cargo generate-lockfile
+      - name: كاش لتسريع البناء
+        uses: Swatinem/rust-cache@v2
 
-      - name: إعداد Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - name: بناء المشروع (release)
+        run: cargo build --release
 
-      - name: تسجيل الدخول إلى Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: dido599999
-          password: ${{ secrets.DOCKER_PAT }}
+      - name: تشغيل دورة تطور واحدة
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GROQ_MODEL: ${{ secrets.GROQ_MODEL }}
+        run: ./target/release/md1robot --run-once
 
-      - name: بناء ورفع صورة Docker
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          push: true
-          tags: |
-            dido599999/md1robot:latest
-            ${{ env.DOCKER_IMAGE }}
+      - name: حفظ ورفع التغييرات (الكود + قاعدة البيانات)
+        run: |
+          git config user.name "MD1RoBoT"
+          git config user.email "bot@md1robot.local"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "مفيش تغييرات الدورة دي."
+          else
+            git commit -m "🧬 دورة تطور تلقائية $(date -u +'%Y-%m-%d %H:%M UTC')"
+            git push
+          fi
