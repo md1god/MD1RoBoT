@@ -133,7 +133,7 @@ impl OllamaClient {
             let max_resp_tokens = env::var("GROQ_MAX_TOKENS")
                 .ok()
                 .and_then(|s| s.parse::<u64>().ok())
-                .unwrap_or(2048);
+                .unwrap_or(900);
             let need_tokens = prompt_tokens_est.saturating_add(max_resp_tokens);
 
             // If using Groq, attempt to reserve tokens globally before sending
