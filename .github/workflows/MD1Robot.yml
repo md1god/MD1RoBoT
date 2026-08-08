@@ -1,33 +1,45 @@
 name: MD1RoBoT Evolution Cycle
+
 on:
   schedule:
-    - cron: "0 * * * *"
+    - cron: "*/20 * * * *"   # كل 20 دقيقة تقريبًا
   workflow_dispatch:
+
 permissions:
-  contents: write   # لازم "write" مش "read" عشان نقدر نعمل push
+  contents: write   # صلاحية الكتابة لرفع التغييرات
+
 concurrency:
   group: md1robot-evolution
   cancel-in-progress: false
+
 jobs:
   evolve:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 25
+
     steps:
       - name: سحب الكود من المستودع
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
       - name: إعداد Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+
       - name: كاش لتسريع البناء
         uses: Swatinem/rust-cache@v2
+
       - name: بناء المشروع (release)
         run: cargo build --release
+
       - name: تشغيل دورة تطور واحدة
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GROQ_MODEL: ${{ secrets.GROQ_MODEL }}
+          GROQ_TPM_LIMIT: ${{ secrets.GROQ_TPM_LIMIT }}
+          GROQ_MAX_TOKENS: ${{ secrets.GROQ_MAX_TOKENS }}
         run: ./target/release/md1robot --run-once
+
       - name: حفظ ورفع التغييرات (الكود + قاعدة البيانات)
         run: |
           git config user.name "MD1RoBoT"
