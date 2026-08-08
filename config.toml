@@ -1,42 +1,25 @@
 [evolution]
-
 max_cycles = 5
-
 health_threshold = 0.4
 
-
-
 [fitness_weights]
-
 performance = 0.35
-
 memory = 0.20
-
 reliability = 0.30
-
 maintainability = 0.15
 
-
-
 [models]
-
 rust = "qwen2.5-coder:7b"
-
 python = "qwen2.5-coder:7b"
-
 javascript = "qwen2.5-coder:7b"
-
 c = "qwen2.5-coder:7b"
-
 cpp = "qwen2.5-coder:7b"
-
 default = "qwen2.5-coder:7b"
 
-
-
 [kreza]
-
 use_ensemble = false
+ensemble_models = ["qwen2.5-coder:7b"]
 
-ensemble_models = ["qwen2.5-coder:7b"] 
-
+[groq]
+tpm_limit = 8000
+max_tokens = 1200
