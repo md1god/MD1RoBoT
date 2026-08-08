@@ -4,6 +4,7 @@ use std::thread::sleep;
 use std::time::{Duration, Instant};
 use std::sync::{Mutex, OnceLock};
 
+/// 🔌 عميل التواصل مع النماذج (OllamaClient) لدعم التشغيل المحلي والسحابي مع إدارة الحصص
 #[derive(Clone)]
 pub struct OllamaClient {
     endpoint: String,
@@ -11,6 +12,7 @@ pub struct OllamaClient {
     api_key: Option<String>,
 }
 
+/// ⏱️ منظم معدل الطلبات وحصص الرموز (Rate Limiter) لمنع تجاوز الحد المسموح للخدمات
 struct RateLimiter {
     window_start: Instant,
     used: u64,
@@ -28,28 +30,25 @@ impl RateLimiter {
         }
     }
 
-    // Try to reserve `need` tokens. Returns Ok(()) if reserved, Err(wait_duration) if not.
+    /// 🔒 محاولة حجز رموز جديدة للطلب الحالي
     fn try_reserve(&mut self, need: u64) -> Result<(), Duration> {
         let elapsed = self.window_start.elapsed().as_secs_f64();
         if elapsed >= (self.window_secs as f64) {
-            // reset window
             self.window_start = Instant::now();
             self.used = 0;
         }
         if need > self.limit {
-            // single request would exceed limit: signal long wait (caller may reduce tokens)
             return Err(Duration::from_secs(self.window_secs));
         }
         if self.used + need <= self.limit {
             self.used += need;
             return Ok(());
         }
-        // not enough tokens left in this window; compute wait until reset
         let wait_secs = self.window_secs.saturating_sub(self.window_start.elapsed().as_secs());
-        Err(Duration::from_secs(wait_secs + 1)) // add 1s safety margin
+        Err(Duration::from_secs(wait_secs + 1))
     }
 
-    // release previously reserved tokens (e.g., on 429 or failure)
+    /// 🔓 تحرير الرموز المحجوزة في حالة الفشل أو حدوث خطأ
     fn release(&mut self, qty: u64) {
         if self.used >= qty {
             self.used -= qty;
@@ -57,20 +56,12 @@ impl RateLimiter {
             self.used = 0;
         }
     }
-
-    fn time_until_reset(&self) -> Duration {
-        let elapsed = self.window_start.elapsed().as_secs();
-        if elapsed >= self.window_secs {
-            Duration::ZERO
-        } else {
-            Duration::from_secs(self.window_secs - elapsed + 1)
-        }
-    }
 }
 
 static GLOBAL_RATE_LIMITER: OnceLock<Mutex<RateLimiter>> = OnceLock::new();
 
 impl OllamaClient {
+    /// 🏗️ إنشاء مثيل جديد وتحديد ما إذا كان سيعمل محلياً (Ollama) أو سحابياً (Groq)
     pub fn new(model_override: Option<&str>) -> Self {
         let groq_key = env::var("GROQ_API_KEY").ok();
 
@@ -88,12 +79,11 @@ impl OllamaClient {
             let mdl = model_override
                 .map(|m| m.to_string())
                 .unwrap_or_else(|| {
-                    env::var("OLLAMA_MODEL").unwrap_or_else(|_| "qwen2.5-coder:7b".to_string())
+                    env::var("OLLAMA_MODEL").unwrap_or_else(|_| "qwen2.5-coder:1.5b".to_string())
                 });
             (ep, mdl)
         };
 
-        // ensure global rate limiter exists (only matters if using Groq)
         if groq_key.is_some() {
             let tpm_limit = env::var("GROQ_TPM_LIMIT")
                 .ok()
@@ -104,7 +94,6 @@ impl OllamaClient {
                 .and_then(|s| s.parse::<u64>().ok())
                 .unwrap_or(60);
             GLOBAL_RATE_LIMITER.get_or_init(|| Mutex::new(RateLimiter::new(tpm_limit, window_secs)));
-            // Note: we ignore the returned lock here; it will be used at request time.
         }
 
         OllamaClient {
@@ -114,21 +103,18 @@ impl OllamaClient {
         }
     }
 
+    /// 🚀 إرسال الطلب إلى النموذج واستلام النص المولد مع إدارة إعادة المحاولة عند الحظر
     pub fn generate(&self, prompt: &str) -> Result<String, String> {
         let client = ureq::AgentBuilder::new()
             .timeout(std::time::Duration::from_secs(300))
             .build();
 
-        // If using Groq, add a small proactive pause to avoid tight bursts from same instance
         if self.api_key.is_some() {
-            // default short pause between sequential requests from same thread
             sleep(Duration::from_millis(500));
         }
 
         let max_attempts = 6;
         for attempt in 0..max_attempts {
-            // estimate tokens needed for this request
-            // rough estimate: tokens in prompt ~ chars/4, plus response tokens = GROQ_MAX_TOKENS
             let prompt_tokens_est = (prompt.len() as u64 / 4).max(1);
             let max_resp_tokens = env::var("GROQ_MAX_TOKENS")
                 .ok()
@@ -136,7 +122,6 @@ impl OllamaClient {
                 .unwrap_or(900);
             let need_tokens = prompt_tokens_est.saturating_add(max_resp_tokens);
 
-            // If using Groq, attempt to reserve tokens globally before sending
             let mut reserved = false;
             if self.api_key.is_some() {
                 if let Some(lock) = GLOBAL_RATE_LIMITER.get() {
@@ -148,11 +133,9 @@ impl OllamaClient {
                                 break;
                             }
                             Err(wait) => {
-                                let wait = wait;
                                 eprintln!("Global TPM exhausted, waiting {:.1}s before trying to send...", wait.as_secs_f64());
                                 drop(rl);
                                 sleep(wait);
-                                // then loop and try again
                             }
                         }
                     }
@@ -214,7 +197,6 @@ impl OllamaClient {
                     }
                 }
                 Err(ureq::Error::Status(429, resp)) => {
-                    // free reserved tokens, if any
                     if reserved {
                         if let Some(lock) = GLOBAL_RATE_LIMITER.get() {
                             let mut rl = lock.lock().unwrap();
@@ -222,10 +204,23 @@ impl OllamaClient {
                         }
                     }
                     let text = resp.into_string().unwrap_or_default();
-                    // نستنى المدة اللي مزود الخدمة نفسه طلبها، زائد هامش أمان
-                    // بيكبر مع كل محاولة فاشلة، عشان مانضربش نفس نافذة الدقيقة
-                    // بمحاولات متلاحقة كل كام ثانية.
+                    // نستنى المدة اللي مزود الخدمة نفسه طلبها + هامش أمان يكبر مع
+                    // كل محاولة فاشلة، عشان مانضربش نفس النافذة الزمنية بمحاولات
+                    // متلاحقة كل ثواني قليلة وتفضل الحصة "مشغولة" باستمرار.
                     let provider_wait = parse_retry_seconds(&text).unwrap_or(8.0);
+                    // لو مزود الخدمة طالب انتظار طويل (أكتر من دقيقة)، ده مؤشر حد
+                    // يومي/تراكمي مش حد الدقيقة العادي — إعادة المحاولة هنا مفيدش
+                    // ومبتعملش غير استهلاك زيادة من الحصة، فنوقف فوراً بدل ما نلف.
+                    if provider_wait > 60.0 {
+                        eprintln!(
+                            "Provider requested a long wait ({:.1}s) — likely a daily/account limit, not retrying.",
+                            provider_wait
+                        );
+                        return Err(format!(
+                            "Rate limit likely daily/account-level (provider asked to wait {:.1}s)",
+                            provider_wait
+                        ));
+                    }
                     let backoff_margin = 5.0 * (attempt as f64 + 1.0);
                     let wait_secs = provider_wait + backoff_margin;
                     eprintln!(
@@ -237,10 +232,8 @@ impl OllamaClient {
                     if attempt == max_attempts - 1 {
                         return Err(format!("Rate limit exceeded after {} attempts", max_attempts));
                     }
-                    // continue to next attempt (backoff loop)
                 }
                 Err(other) => {
-                    // on other errors, if we reserved tokens, release them
                     if reserved {
                         if let Some(lock) = GLOBAL_RATE_LIMITER.get() {
                             let mut rl = lock.lock().unwrap();
