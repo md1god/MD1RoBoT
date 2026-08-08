@@ -2,11 +2,11 @@ name: MD1RoBoT Evolution Cycle
 
 on:
   schedule:
-    - cron: "*/20 * * * *"   # كل 20 دقيقة تقريبًا (GitHub ممكن يأخر شوية وقت الزحمة)
+    - cron: "*/20 * * * *"   # كل 20 دقيقة تقريبًا
   workflow_dispatch:
 
 permissions:
-  contents: write   # لازم "write" مش "read" عشان نقدر نعمل push
+  contents: write   # لازم "write" عشان نقدر نعمل push
 
 concurrency:
   group: md1robot-evolution
@@ -36,6 +36,8 @@ jobs:
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GROQ_MODEL: ${{ secrets.GROQ_MODEL }}
+          GROQ_TPM_LIMIT: ${{ secrets.GROQ_TPM_LIMIT }}
+          GROQ_MAX_TOKENS: ${{ secrets.GROQ_MAX_TOKENS }}
         run: ./target/release/md1robot --run-once
 
       - name: حفظ ورفع التغييرات (الكود + قاعدة البيانات)
