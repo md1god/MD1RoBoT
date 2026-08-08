@@ -222,7 +222,12 @@ impl OllamaClient {
                         }
                     }
                     let text = resp.into_string().unwrap_or_default();
-                    let wait_secs = parse_retry_seconds(&text).unwrap_or(8.0) + 1.0;
+                    // نستنى المدة اللي مزود الخدمة نفسه طلبها، زائد هامش أمان
+                    // بيكبر مع كل محاولة فاشلة، عشان مانضربش نفس نافذة الدقيقة
+                    // بمحاولات متلاحقة كل كام ثانية.
+                    let provider_wait = parse_retry_seconds(&text).unwrap_or(8.0);
+                    let backoff_margin = 5.0 * (attempt as f64 + 1.0);
+                    let wait_secs = provider_wait + backoff_margin;
                     eprintln!(
                         "Rate limited by provider (attempt {}). Waiting {:.1}s...",
                         attempt + 1,
