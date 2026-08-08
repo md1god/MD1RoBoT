@@ -9,16 +9,16 @@ reliability = 0.30
 maintainability = 0.15
 
 [models]
-rust = "qwen2.5-coder:7b"
-python = "qwen2.5-coder:7b"
-javascript = "qwen2.5-coder:7b"
-c = "qwen2.5-coder:7b"
-cpp = "qwen2.5-coder:7b"
-default = "qwen2.5-coder:7b"
+rust = "openai/gpt-oss-120b"
+python = "openai/gpt-oss-120b"
+javascript = "openai/gpt-oss-120b"
+c = "openai/gpt-oss-120b"
+cpp = "openai/gpt-oss-120b"
+default = "openai/gpt-oss-120b"
 
 [kreza]
 use_ensemble = false
-ensemble_models = ["qwen2.5-coder:7b"]
+ensemble_models = ["openai/gpt-oss-120b"]
 
 [groq]
 tpm_limit = 8000
