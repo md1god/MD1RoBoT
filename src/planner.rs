@@ -12,6 +12,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
 use sha2::Digest;
 
+/// 🗺️ المخطط العام لدورات التطور الذاتي (Planner) المسؤول عن تنظيم الطفرات واختبارها واعتمادها
 pub struct Planner {
     brain: Brain,
     db: Db,
@@ -21,16 +22,18 @@ pub struct Planner {
 }
 
 impl Planner {
+    /// 🏗️ بناء مثيل جديد للمخطط مع ربطه بالعكلات والوكلاء وقاعدة البيانات والإعدادات
     pub fn new(brain: Brain, db: Db, goal_manager: GoalManager, evo: EvolutionController, config: AppConfig) -> Self {
         Planner { brain, db, goal_manager, evo, config }
     }
 
+    /// ⚡ تنفيذ دورة تطور كاملة (توليد، اختبار، تقييم، دمج الحفظ والجينوم)
     pub fn run_cycle(&mut self) -> Result<(), String> {
         let ctx_builder = ContextBuilder::new(self.db.clone(), self.goal_manager.clone());
-        let mut ctx = ctx_builder.build();
+        let ctx = ctx_builder.build();
 
         let crazy = Crazy;
-        let proposals = crazy.propose_mutations(&mut self.brain, &ctx, 5)?;
+        let proposals = crazy.propose_mutations(&mut self.brain, &ctx, 3)?; // فائض التوكنز يسمح بـ 3 اقتراحات متنافسة بدل واحد
 
         let mut best_score = 0.0;
         let mut best_plan: Option<(Suggestion, Evaluation, crate::db::Phenotype, Hypothesis)> = None;
@@ -86,6 +89,7 @@ impl Planner {
             }
         }
 
+        // 🏆 تطبيق أفضل طفرة معتمدة وحفظ التغييرات في النظام
         if let Some((sug, _eval, pheno, hyp)) = best_plan {
             let target_file = &sug.file_path;
             let original_content = std::fs::read_to_string(target_file)
@@ -112,12 +116,12 @@ impl Planner {
                 &fitness, &pheno, &error_hash,
             )?;
 
-            // تسجيل الفرضية ونقلها إلى نظرية
+            // 🧠 تسجيل الفرضية وترقيتها إلى نظرية داخل بنك المعرفة
             self.db.insert_hypothesis(&hyp.id, &hyp.statement, &hyp.context_tags, hyp.confidence as f64, new_gen)
                 .map_err(|e| e.to_string())?;
 
             let matching_theories = self.db.find_matching_theories(&hyp.context_tags);
-            let theory_id = if let Some((existing_id, existing_statement, old_conf, ev)) = matching_theories.first() {
+            let _theory_id = if let Some((existing_id, existing_statement, old_conf, _ev)) = matching_theories.first() {
                 let new_conf = (old_conf + 0.6).min(1.0);
                 self.db.upsert_theory(existing_id, existing_statement, &hyp.id, new_conf, &["rust".to_string()], new_gen)
                     .map_err(|e| e.to_string())?;
