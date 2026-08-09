@@ -1,9 +1,6 @@
 name: MD1RoBoT Evolution Cycle
 
-on:
-  schedule:
-    - cron: "*/20 * * * *"   # كل 20 دقيقة تقريبًا
-  workflow_dispatch:
+
 
 permissions:
   contents: write   # صلاحية الكتابة لرفع التغييرات
