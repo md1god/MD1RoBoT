@@ -1,6 +1,0 @@
-FROM ubuntu:22.04
-RUN apt-get update && apt-get install -y \
-    cargo rustc python3 nodejs npm gcc g++ nasm binutils \
-    semgrep curl && \
-    rm -rf /var/lib/apt/lists/*
-WORKDIR /app/project
